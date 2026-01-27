@@ -1,0 +1,341 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* FarmVault Design System - Enterprise Agricultural Theme */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@layer base {
+  :root {
+    /* Core Background Colors */
+    --background: 40 23% 94%; /* Warm beige #F5F1EB */
+    --foreground: 150 20% 18%; /* Dark charcoal green */
+
+    /* Card Surfaces */
+    --card: 0 0% 100%;
+    --card-foreground: 150 20% 18%;
+
+    /* Popover */
+    --popover: 0 0% 100%;
+    --popover-foreground: 150 20% 18%;
+
+    /* Primary - Dark Forest Green */
+    --primary: 150 30% 22%; /* #2D4A3E */
+    --primary-foreground: 40 30% 95%;
+
+    /* Secondary - Soft Sage */
+    --secondary: 80 15% 88%;
+    --secondary-foreground: 150 20% 25%;
+
+    /* Muted - Warm Gray */
+    --muted: 40 15% 90%;
+    --muted-foreground: 150 10% 45%;
+
+    /* Accent - Olive Gold */
+    --accent: 45 60% 50%; /* Gold accent */
+    --accent-foreground: 150 20% 15%;
+
+    /* Destructive */
+    --destructive: 0 65% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Borders & Inputs */
+    --border: 40 15% 85%;
+    --input: 40 15% 88%;
+    --ring: 150 30% 35%;
+
+    --radius: 0.75rem;
+
+    /* Sidebar - Dark Green Gradient */
+    --sidebar-background: 150 35% 18%;
+    --sidebar-foreground: 40 20% 90%;
+    --sidebar-primary: 45 60% 55%;
+    --sidebar-primary-foreground: 150 35% 15%;
+    --sidebar-accent: 150 25% 25%;
+    --sidebar-accent-foreground: 40 20% 95%;
+    --sidebar-border: 150 25% 25%;
+    --sidebar-ring: 45 60% 55%;
+    --sidebar-muted: 150 15% 55%;
+
+    /* FarmVault Custom Tokens */
+    --fv-green-dark: 150 35% 18%;
+    --fv-green-medium: 150 30% 28%;
+    --fv-green-light: 150 25% 38%;
+    --fv-olive: 80 30% 45%;
+    --fv-gold: 45 70% 50%;
+    --fv-gold-soft: 45 50% 85%;
+    --fv-beige: 40 23% 94%;
+    --fv-cream: 40 30% 97%;
+    --fv-success: 142 50% 45%;
+    --fv-warning: 38 92% 50%;
+    --fv-info: 199 89% 48%;
+
+    /* Shadows */
+    --shadow-card: 0 2px 8px -2px rgba(45, 74, 62, 0.08), 0 4px 16px -4px rgba(45, 74, 62, 0.12);
+    --shadow-card-hover: 0 4px 12px -2px rgba(45, 74, 62, 0.12), 0 8px 24px -4px rgba(45, 74, 62, 0.16);
+    --shadow-sidebar: 4px 0 24px -4px rgba(31, 53, 41, 0.25);
+
+    /* Chart Colors */
+    --chart-1: 150 35% 35%;
+    --chart-2: 45 70% 50%;
+    --chart-3: 80 30% 45%;
+    --chart-4: 150 25% 50%;
+    --chart-5: 38 70% 55%;
+  }
+
+  .dark {
+    --background: 150 25% 8%;
+    --foreground: 40 20% 92%;
+
+    --card: 150 20% 12%;
+    --card-foreground: 40 20% 92%;
+
+    --popover: 150 20% 12%;
+    --popover-foreground: 40 20% 92%;
+
+    --primary: 45 60% 55%;
+    --primary-foreground: 150 35% 12%;
+
+    --secondary: 150 15% 20%;
+    --secondary-foreground: 40 20% 90%;
+
+    --muted: 150 15% 18%;
+    --muted-foreground: 40 10% 60%;
+
+    --accent: 45 50% 45%;
+    --accent-foreground: 40 20% 95%;
+
+    --destructive: 0 62.8% 45%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 150 15% 20%;
+    --input: 150 15% 20%;
+    --ring: 45 60% 55%;
+
+    --sidebar-background: 150 30% 10%;
+    --sidebar-foreground: 40 20% 90%;
+    --sidebar-primary: 45 60% 55%;
+    --sidebar-primary-foreground: 150 35% 10%;
+    --sidebar-accent: 150 20% 18%;
+    --sidebar-accent-foreground: 40 20% 95%;
+    --sidebar-border: 150 20% 18%;
+    --sidebar-ring: 45 60% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+@layer components {
+  /* FarmVault Card Styles */
+  .fv-card {
+    @apply bg-card rounded-xl border border-border/50 p-6;
+    box-shadow: var(--shadow-card);
+    transition: box-shadow 0.2s ease;
+  }
+
+  .fv-card:hover {
+    box-shadow: var(--shadow-card-hover);
+  }
+
+  /* Stat Card */
+  .fv-stat-card {
+    @apply fv-card flex flex-col gap-2;
+  }
+
+  .fv-stat-label {
+    @apply text-sm font-medium text-muted-foreground;
+  }
+
+  .fv-stat-value {
+    @apply text-2xl font-bold text-foreground;
+  }
+
+  .fv-stat-change {
+    @apply text-xs font-medium;
+  }
+
+  .fv-stat-change--positive {
+    @apply text-fv-success;
+  }
+
+  .fv-stat-change--negative {
+    @apply text-destructive;
+  }
+
+  /* Sidebar Gradient */
+  .fv-sidebar {
+    background: linear-gradient(180deg, 
+      hsl(150 35% 20%) 0%, 
+      hsl(150 35% 16%) 50%,
+      hsl(150 35% 14%) 100%
+    );
+  }
+
+  /* Table Styles */
+  .fv-table {
+    @apply w-full;
+  }
+
+  .fv-table th {
+    @apply text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 bg-muted/30;
+  }
+
+  .fv-table td {
+    @apply py-4 px-4 text-sm border-b border-border/50;
+  }
+
+  .fv-table tr:hover td {
+    @apply bg-muted/20;
+  }
+
+  /* Status Badges */
+  .fv-badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .fv-badge--active {
+    @apply bg-fv-success/15 text-fv-success;
+  }
+
+  .fv-badge--warning {
+    @apply bg-fv-warning/15 text-fv-warning;
+  }
+
+  .fv-badge--info {
+    @apply bg-fv-info/15 text-fv-info;
+  }
+
+  .fv-badge--gold {
+    @apply bg-fv-gold-soft text-fv-olive;
+  }
+
+  /* Buttons */
+  .fv-btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all;
+  }
+
+  .fv-btn--primary {
+    @apply bg-primary text-primary-foreground hover:bg-primary/90;
+  }
+
+  .fv-btn--secondary {
+    @apply bg-secondary text-secondary-foreground hover:bg-secondary/80;
+  }
+
+  .fv-btn--ghost {
+    @apply hover:bg-muted text-foreground;
+  }
+
+  /* Input Fields */
+  .fv-input {
+    @apply w-full rounded-lg border border-input bg-card px-4 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-primary/50;
+  }
+
+  /* Select Dropdown */
+  .fv-select {
+    @apply fv-input appearance-none cursor-pointer pr-10;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+    background-position: right 0.75rem center;
+    background-repeat: no-repeat;
+    background-size: 1.25em 1.25em;
+  }
+
+  /* AI Chatbot Button */
+  .fv-ai-button {
+    @apply fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105;
+  }
+
+  /* Mobile Card Stack */
+  @media (max-width: 768px) {
+    .fv-table-mobile {
+      @apply block;
+    }
+
+    .fv-table-mobile thead {
+      @apply hidden;
+    }
+
+    .fv-table-mobile tbody {
+      @apply flex flex-col gap-3;
+    }
+
+    .fv-table-mobile tr {
+      @apply fv-card flex flex-col gap-2;
+    }
+
+    .fv-table-mobile td {
+      @apply flex justify-between items-center py-2 px-0 border-b-0;
+    }
+
+    .fv-table-mobile td::before {
+      content: attr(data-label);
+      @apply font-medium text-muted-foreground text-xs uppercase;
+    }
+  }
+}
+
+@layer utilities {
+  .text-fv-success {
+    color: hsl(var(--fv-success));
+  }
+
+  .text-fv-warning {
+    color: hsl(var(--fv-warning));
+  }
+
+  .text-fv-gold {
+    color: hsl(var(--fv-gold));
+  }
+
+  .text-fv-olive {
+    color: hsl(var(--fv-olive));
+  }
+
+  .bg-fv-success {
+    background-color: hsl(var(--fv-success));
+  }
+
+  .bg-fv-gold {
+    background-color: hsl(var(--fv-gold));
+  }
+
+  .bg-fv-gold-soft {
+    background-color: hsl(var(--fv-gold-soft));
+  }
+
+  .bg-fv-olive {
+    background-color: hsl(var(--fv-olive));
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted)) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted));
+    border-radius: 3px;
+  }
+}
