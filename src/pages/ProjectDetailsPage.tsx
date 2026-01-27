@@ -7,6 +7,8 @@ import { doc, getDoc, collection, getDocs, query, where } from 'firebase/firesto
 import { db } from '@/lib/firebase';
 import { CropStage, Expense, InventoryUsage, Project, SeasonChallenge, WorkLog } from '@/types';
 import { useProjectStages } from '@/hooks/useProjectStages';
+import { toDate, formatDate } from '@/lib/dateUtils';
+import { SimpleStatCard } from '@/components/dashboard/SimpleStatCard';
 
 export default function ProjectDetailsPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -95,18 +97,7 @@ export default function ProjectDetailsPage() {
 
   const today = new Date();
 
-  const normalizeDate = (raw: any | undefined) => {
-    if (!raw) return undefined;
-    if (raw instanceof Date) {
-      return isNaN(raw.getTime()) ? undefined : raw;
-    }
-    if (typeof raw.toDate === 'function') {
-      const d = raw.toDate();
-      return isNaN(d.getTime()) ? undefined : d;
-    }
-    const d = new Date(raw);
-    return isNaN(d.getTime()) ? undefined : d;
-  };
+  const normalizeDate = (raw: any | undefined) => toDate(raw) || undefined;
 
   const sortedStages = useMemo(
     () => [...stages].sort((a, b) => (a.stageIndex ?? 0) - (b.stageIndex ?? 0)),
@@ -276,22 +267,14 @@ export default function ProjectDetailsPage() {
                 <span className="flex items-center gap-1">
                   <CalendarIcon className="h-4 w-4" />
                   Planted{' '}
-                  {new Date(project.plantingDate).toLocaleDateString('en-KE', {
-                    year: 'numeric',
-                    month: 'short',
-                    day: 'numeric',
-                  })}
+                  {formatDate(project.plantingDate)}
                 </span>
               )}
               {expectedHarvestDate && (
                 <span className="flex items-center gap-1">
                   <CalendarIcon className="h-4 w-4" />
                   Expected harvest{' '}
-                  {new Date(expectedHarvestDate).toLocaleDateString('en-KE', {
-                    year: 'numeric',
-                    month: 'short',
-                    day: 'numeric',
-                  })}
+                  {formatDate(expectedHarvestDate)}
                 </span>
               )}
             </div>
@@ -301,38 +284,26 @@ export default function ProjectDetailsPage() {
 
           {/* Metrics cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 w-full">
-            <div className="fv-card p-3">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                Days since planting
-              </p>
-              <p className="text-xl font-bold mt-1">
-                {Number.isFinite(daysSincePlanting as any) ? daysSincePlanting : '—'}
-              </p>
-            </div>
-            <div className="fv-card p-3">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                Current stage
-              </p>
-              <p className="text-sm font-semibold mt-1">
-                {currentStage?.stageName ?? 'Not started'}
-              </p>
-            </div>
-            <div className="fv-card p-3">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                Stage progress
-              </p>
-              <p className="text-xl font-bold mt-1">
-                {stageProgressPercent}%
-              </p>
-            </div>
-            <div className="fv-card p-3">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                Total expenses
-              </p>
-              <p className="text-xl font-bold mt-1">
-                {formatCurrency(totalExpenses)}
-              </p>
-            </div>
+            <SimpleStatCard
+              title="Days since planting"
+              value={Number.isFinite(daysSincePlanting as any) ? daysSincePlanting : '—'}
+              layout="vertical"
+            />
+            <SimpleStatCard
+              title="Current stage"
+              value={currentStage?.stageName ?? 'Not started'}
+              layout="vertical"
+            />
+            <SimpleStatCard
+              title="Stage progress"
+              value={`${stageProgressPercent}%`}
+              layout="vertical"
+            />
+            <SimpleStatCard
+              title="Total expenses"
+              value={formatCurrency(totalExpenses)}
+              layout="vertical"
+            />
           </div>
         </div>
       </div>
@@ -395,8 +366,8 @@ export default function ProjectDetailsPage() {
                   <div className="mt-1 text-xs text-muted-foreground flex flex-wrap gap-3">
                     {start && end && (
                       <span>
-                        {start.toLocaleDateString('en-KE', { month: 'short', day: 'numeric' })} –{' '}
-                        {end.toLocaleDateString('en-KE', { month: 'short', day: 'numeric' })}
+                        {formatDate(start, { month: 'short', day: 'numeric' })} –{' '}
+                        {formatDate(end, { month: 'short', day: 'numeric' })}
                       </span>
                     )}
                     {diffDays && <span>{diffDays} days</span>}
@@ -578,22 +549,26 @@ export default function ProjectDetailsPage() {
 
       {/* 5️⃣ Financial snapshot */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="fv-card p-4">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Total project cost</p>
-          <p className="text-2xl font-bold mt-1">{formatCurrency(totalExpenses)}</p>
-        </div>
-        <div className="fv-card p-4">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Labour cost</p>
-          <p className="text-2xl font-bold mt-1">{formatCurrency(labourCost)}</p>
-        </div>
-        <div className="fv-card p-4">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Input cost</p>
-          <p className="text-2xl font-bold mt-1">{formatCurrency(inputCost)}</p>
-        </div>
-        <div className="fv-card p-4">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Avg daily cost</p>
-          <p className="text-2xl font-bold mt-1">{formatCurrency(Number.isFinite(avgDailyCost) ? avgDailyCost : 0)}</p>
-        </div>
+        <SimpleStatCard
+          title="Total project cost"
+          value={formatCurrency(totalExpenses)}
+          layout="vertical"
+        />
+        <SimpleStatCard
+          title="Labour cost"
+          value={formatCurrency(labourCost)}
+          layout="vertical"
+        />
+        <SimpleStatCard
+          title="Input cost"
+          value={formatCurrency(inputCost)}
+          layout="vertical"
+        />
+        <SimpleStatCard
+          title="Avg daily cost"
+          value={formatCurrency(Number.isFinite(avgDailyCost) ? avgDailyCost : 0)}
+          layout="vertical"
+        />
       </div>
 
       {/* 6️⃣ Quick actions */}

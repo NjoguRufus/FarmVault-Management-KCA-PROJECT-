@@ -6,6 +6,9 @@ import { db } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { useCollection } from '@/hooks/useCollection';
 import { Harvest, Sale } from '@/types';
+import { SimpleStatCard } from '@/components/dashboard/SimpleStatCard';
+import { useQueryClient } from '@tanstack/react-query';
+import { formatDate } from '@/lib/dateUtils';
 import {
   Dialog,
   DialogTrigger,
@@ -17,6 +20,7 @@ import {
 
 export default function HarvestSalesPage() {
   const { activeProject } = useProject();
+  const queryClient = useQueryClient();
   const { data: allHarvests = [], isLoading: loadingHarvests } = useCollection<Harvest>('harvests', 'harvests');
   const { data: allSales = [], isLoading: loadingSales } = useCollection<Sale>('sales', 'sales');
 
@@ -151,6 +155,11 @@ export default function HarvestSalesPage() {
         date: serverTimestamp(),
         createdAt: serverTimestamp(),
       });
+      
+      // Invalidate queries to refresh data immediately
+      queryClient.invalidateQueries({ queryKey: ['sales'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-sales'] });
+      
       setSaleOpen(false);
       setBuyerName('');
       setSaleQty('');
@@ -593,33 +602,32 @@ export default function HarvestSalesPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="fv-card">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-              <TrendingUp className="h-5 w-5 text-primary" />
-            </div>
-            <p className="text-sm text-muted-foreground">Total Harvest</p>
-          </div>
-          <p className="text-2xl font-bold">{totalHarvest.toLocaleString()} kg</p>
-        </div>
-        <div className="fv-card">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-fv-gold-soft">
-              <TrendingUp className="h-5 w-5 text-fv-olive" />
-            </div>
-            <p className="text-sm text-muted-foreground">Total Sales</p>
-          </div>
-          <p className="text-2xl font-bold">{formatCurrency(totalSales)}</p>
-        </div>
-        <div className="fv-card">
-          <p className="text-sm text-muted-foreground mb-1">Completed Sales</p>
-          <p className="text-2xl font-bold">{sales.filter(s => s.status === 'completed').length}</p>
-        </div>
-        <div className="fv-card">
-          <p className="text-sm text-muted-foreground mb-1">Pending Sales</p>
-          <p className="text-2xl font-bold text-fv-warning">{sales.filter(s => s.status === 'pending').length}</p>
-        </div>
+      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
+        <SimpleStatCard
+          title="Total Harvest"
+          value={`${totalHarvest.toLocaleString()} kg`}
+          icon={TrendingUp}
+          iconVariant="primary"
+          layout="vertical"
+        />
+        <SimpleStatCard
+          title="Total Sales"
+          value={formatCurrency(totalSales)}
+          icon={TrendingUp}
+          iconVariant="gold"
+          layout="vertical"
+        />
+        <SimpleStatCard
+          title="Completed Sales"
+          value={sales.filter(s => s.status === 'completed').length}
+          layout="vertical"
+        />
+        <SimpleStatCard
+          title="Pending Sales"
+          value={sales.filter(s => s.status === 'pending').length}
+          valueVariant="warning"
+          layout="vertical"
+        />
       </div>
 
       {/* Harvests Section */}
@@ -647,11 +655,7 @@ export default function HarvestSalesPage() {
               {harvests.map((harvest) => (
                 <tr key={harvest.id}>
                   <td>
-                    {new Date(harvest.date).toLocaleDateString('en-KE', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                    })}
+                    {formatDate(harvest.date)}
                   </td>
                   <td className="font-medium">{harvest.quantity.toLocaleString()} {harvest.unit}</td>
                   <td>
@@ -681,11 +685,7 @@ export default function HarvestSalesPage() {
                 </span>
               </div>
               <p className="text-sm text-muted-foreground">
-                {new Date(harvest.date).toLocaleDateString('en-KE', {
-                  month: 'long',
-                  day: 'numeric',
-                  year: 'numeric',
-                })}
+                {formatDate(harvest.date, { month: 'long' })}
               </p>
             </div>
           ))}

@@ -319,11 +319,6 @@ export default function ProjectPlanningPage() {
               Changes here affect project timelines and reports. All edits are logged as immutable
               change-of-plan events.
             </p>
-            {!canEdit && (
-              <p className="text-xs text-muted-foreground mt-1">
-                You have read-only access. Only company admins and managers can edit planning.
-              </p>
-            )}
           </div>
         </div>
       </div>
@@ -352,7 +347,6 @@ export default function ProjectPlanningPage() {
                   <input
                     type="date"
                     className="fv-input"
-                    disabled={!canEdit}
                     value={plantingDateInput}
                     onChange={(e) => setPlantingDateInput(e.target.value)}
                   />
@@ -373,7 +367,7 @@ export default function ProjectPlanningPage() {
                 <button
                   type="submit"
                   className="fv-btn fv-btn--primary"
-                  disabled={!canEdit || savingPlanting}
+                  disabled={savingPlanting}
                 >
                   {savingPlanting ? 'Saving…' : 'Save Change'}
                 </button>
@@ -405,7 +399,6 @@ export default function ProjectPlanningPage() {
                   <label className="text-sm font-medium text-foreground">Variety</label>
                   <input
                     className="fv-input"
-                    disabled={!canEdit}
                     value={seedVariety}
                     onChange={(e) => setSeedVariety(e.target.value)}
                     placeholder="e.g. Indeterminate salad type"
@@ -427,7 +420,6 @@ export default function ProjectPlanningPage() {
                   <label className="text-sm font-medium text-foreground">Batch / lot number</label>
                   <input
                     className="fv-input"
-                    disabled={!canEdit}
                     value={seedBatch}
                     onChange={(e) => setSeedBatch(e.target.value)}
                     placeholder="e.g. LOT-2026-08-1234"
@@ -449,7 +441,7 @@ export default function ProjectPlanningPage() {
                 <button
                   type="submit"
                   className="fv-btn fv-btn--primary"
-                  disabled={!canEdit || savingSeed}
+                  disabled={savingSeed}
                 >
                   {savingSeed ? 'Saving…' : 'Save Seed Plan'}
                 </button>

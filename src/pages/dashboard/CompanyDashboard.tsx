@@ -5,6 +5,7 @@ import { ActivityChart } from '@/components/dashboard/ActivityChart';
 import { ExpensesPieChart } from '@/components/dashboard/ExpensesPieChart';
 import { ProjectsTable } from '@/components/dashboard/ProjectsTable';
 import { InventoryOverview, SalesOverview, CropStageProgress } from '@/components/dashboard/DashboardWidgets';
+import { InventoryItem, CropStage } from '@/types';
 import { useProject } from '@/contexts/ProjectContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCollection } from '@/hooks/useCollection';
@@ -14,42 +15,102 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 export function CompanyDashboard() {
   const { activeProject } = useProject();
   const { user } = useAuth();
+  const [projectFilter, setProjectFilter] = React.useState<'all' | 'selected'>('selected');
 
   const companyId = user?.companyId || '';
   const { data: allProjects = [] } = useCollection<Project>('dashboard-projects', 'projects');
   const { data: allExpenses = [] } = useCollection<Expense>('dashboard-expenses', 'expenses');
   const { data: allHarvests = [] } = useCollection<Harvest>('dashboard-harvests', 'harvests');
   const { data: allSales = [] } = useCollection<Sale>('dashboard-sales', 'sales');
+  const { data: allInventory = [] } = useCollection<InventoryItem>('dashboard-inventory', 'inventoryItems');
+  const { data: allStages = [] } = useCollection<CropStage>('dashboard-stages', 'projectStages');
 
   const companyProjects = companyId
     ? allProjects.filter(p => p.companyId === companyId)
     : allProjects;
 
-  const companyExpenses = companyId
-    ? allExpenses.filter(e => e.companyId === companyId)
-    : allExpenses;
+  // Filter by project if selected, otherwise show all company data
+  const filteredExpenses = React.useMemo(() => {
+    let filtered = companyId
+      ? allExpenses.filter(e => e.companyId === companyId)
+      : allExpenses;
+    
+    if (projectFilter === 'selected' && activeProject) {
+      filtered = filtered.filter(e => e.projectId === activeProject.id);
+    }
+    return filtered;
+  }, [allExpenses, companyId, activeProject, projectFilter]);
 
-  const companyHarvests = companyId
-    ? allHarvests.filter(h => h.companyId === companyId)
-    : allHarvests;
+  const filteredHarvests = React.useMemo(() => {
+    let filtered = companyId
+      ? allHarvests.filter(h => h.companyId === companyId)
+      : allHarvests;
+    
+    if (projectFilter === 'selected' && activeProject) {
+      filtered = filtered.filter(h => h.projectId === activeProject.id);
+    }
+    return filtered;
+  }, [allHarvests, companyId, activeProject, projectFilter]);
 
-  const companySales = companyId
-    ? allSales.filter(s => s.companyId === companyId)
-    : allSales;
+  const filteredSales = React.useMemo(() => {
+    let filtered = companyId
+      ? allSales.filter(s => s.companyId === companyId)
+      : allSales;
+    
+    if (projectFilter === 'selected' && activeProject) {
+      filtered = filtered.filter(s => s.projectId === activeProject.id);
+    }
+    return filtered;
+  }, [allSales, companyId, activeProject, projectFilter]);
 
-  const totalExpenses = companyExpenses.reduce((sum, e) => sum + e.amount, 0);
-  const totalHarvest = companyHarvests.reduce((sum, h) => sum + h.quantity, 0);
-  const totalSales = companySales.reduce((sum, s) => sum + s.totalAmount, 0);
+  const filteredProjects = React.useMemo(() => {
+    if (projectFilter === 'selected' && activeProject) {
+      return [activeProject];
+    }
+    return companyProjects;
+  }, [companyProjects, activeProject, projectFilter]);
+
+  // Filter inventory and stages by company/project
+  const filteredInventory = React.useMemo(() => {
+    let filtered = companyId
+      ? allInventory.filter(i => i.companyId === companyId)
+      : allInventory;
+    
+    if (projectFilter === 'selected' && activeProject) {
+      // For inventory, we might want to show all company inventory, but for now keep it company-wide
+      // You can add project-specific filtering if needed
+    }
+    return filtered;
+  }, [allInventory, companyId, activeProject, projectFilter]);
+
+  const filteredStages = React.useMemo(() => {
+    let filtered = companyId
+      ? allStages.filter(s => s.companyId === companyId)
+      : allStages;
+    
+    if (projectFilter === 'selected' && activeProject) {
+      filtered = filtered.filter(s => s.projectId === activeProject.id);
+    }
+    return filtered;
+  }, [allStages, companyId, activeProject, projectFilter]);
+
+  const totalExpenses = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
+  const totalHarvest = filteredHarvests.reduce((sum, h) => sum + h.quantity, 0);
+  const totalSales = filteredSales.reduce((sum, s) => sum + s.totalAmount, 0);
   const netBalance = totalSales - totalExpenses;
+  
+  // Calculate total budget from filtered projects
+  const totalBudget = filteredProjects.reduce((sum, p) => sum + (p.budget || 0), 0);
+  const remainingBudget = totalBudget - totalExpenses;
 
   const expensesByCategory = Object.values(
-    companyExpenses.reduce<Record<string, number>>((acc, e) => {
+    filteredExpenses.reduce<Record<string, number>>((acc, e) => {
       acc[e.category] = (acc[e.category] || 0) + e.amount;
       return acc;
     }, {}),
   ).length
     ? Object.entries(
-        companyExpenses.reduce<Record<string, number>>((acc, e) => {
+        filteredExpenses.reduce<Record<string, number>>((acc, e) => {
           acc[e.category] = (acc[e.category] || 0) + e.amount;
           return acc;
         }, {}),
@@ -67,75 +128,84 @@ export function CompanyDashboard() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Select defaultValue="this-month">
-            <SelectTrigger className="w-40">
-              <SelectValue placeholder="Time range" />
+          <Select 
+            value={projectFilter} 
+            onValueChange={(value) => setProjectFilter(value as 'all' | 'selected')}
+          >
+            <SelectTrigger className="w-40 text-sm">
+              <SelectValue placeholder="Filter" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="this-month">This Month</SelectItem>
-              <SelectItem value="last-month">Last Month</SelectItem>
-              <SelectItem value="this-quarter">Thiis Quarter</SelectItem>
-              <SelectItem value="this-year">This Year</SelectItem>
+              <SelectItem value="selected">
+                {activeProject ? activeProject.name : 'Selected Project'}
+              </SelectItem>
+              <SelectItem value="all">All Projects</SelectItem>
             </SelectContent>
           </Select>
         </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          title="Total Expenses"
-          value={`KES ${totalExpenses.toLocaleString()}`}
-          change={12.5}
-          changeLabel="vs last month"
-          icon={<DollarSign className="h-5 w-5" />}
-          variant="default"
-        />
-        <StatCard
-          title="Total Harvest"
-          value={`${totalHarvest.toLocaleString()} kg`}
-          change={8.2}
-          changeLabel="vs last month"
-          icon={<Package className="h-5 w-5" />}
-          variant="primary"
-        />
-        <StatCard
-          title="Total Sales"
-          value={`KES ${totalSales.toLocaleString()}`}
-          change={15.3}
-          changeLabel="vs last month"
-          icon={<TrendingUp className="h-5 w-5" />}
-          variant="gold"
-        />
-        <StatCard
-          title="Net Balance"
-          value={`KES ${netBalance.toLocaleString()}`}
-          change={22.1}
-          changeLabel="vs last month"
-          icon={<Wallet className="h-5 w-5" />}
-          variant="primary"
-        />
+      {/* Stats Grid - Compact and Mobile Responsive */}
+      <div className="space-y-3">
+        {/* Row 1: Total Revenue and Total Expenses (same row on desktop) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <StatCard
+            title="Total Revenue"
+            value={`KES ${totalSales.toLocaleString()}`}
+            change={15.3}
+            changeLabel="vs last month"
+            icon={<TrendingUp className="h-4 w-4" />}
+            variant="gold"
+            compact
+          />
+          <StatCard
+            title="Total Expenses"
+            value={`KES ${totalExpenses.toLocaleString()}`}
+            change={12.5}
+            changeLabel="vs last month"
+            icon={<DollarSign className="h-4 w-4" />}
+            variant="default"
+            compact
+          />
+        </div>
+        {/* Row 2: Profit and Loss + Remaining Budget (side by side on mobile) */}
+        <div className="grid grid-cols-2 gap-3">
+          <StatCard
+            title="Profit and Loss"
+            value={`KES ${netBalance.toLocaleString()}`}
+            change={netBalance >= 0 ? 22.1 : -5.2}
+            changeLabel="vs last month"
+            icon={<Wallet className="h-4 w-4" />}
+            variant={netBalance >= 0 ? 'primary' : 'default'}
+            compact
+          />
+          <StatCard
+            title="Remaining Budget"
+            value={`KES ${remainingBudget.toLocaleString()}`}
+            change={undefined}
+            changeLabel={`of KES ${totalBudget.toLocaleString()}`}
+            icon={<CalendarIcon className="h-4 w-4" />}
+            variant={remainingBudget >= 0 ? 'primary' : 'default'}
+            compact
+          />
+        </div>
       </div>
 
-      {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <ActivityChart data={[]} />
-        </div>
-        <div>
-          <ExpensesPieChart data={expensesByCategory} />
-        </div>
+      {/* Charts Row - Recent Activity and Expenses Category (same row on desktop) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <ActivityChart data={[]} />
+        <ExpensesPieChart data={expensesByCategory} />
       </div>
 
       {/* Bottom Widgets */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <CropStageProgress />
-        <InventoryOverview />
+        <CropStageProgress stages={filteredStages} />
+        <InventoryOverview inventoryItems={filteredInventory} />
         <SalesOverview />
       </div>
 
       {/* Projects Table */}
-      <ProjectsTable projects={companyProjects} />
+      <ProjectsTable projects={filteredProjects} compact />
     </div>
   );
 }

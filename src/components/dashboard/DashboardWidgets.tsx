@@ -1,44 +1,57 @@
 import React from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { mockActivityData } from '@/data/mockData';
+import { InventoryItem } from '@/types';
 
-interface InventoryItem {
-  name: string;
-  quantity: number;
-  trend: 'up' | 'down' | 'stable';
-  change: number;
+interface InventoryOverviewProps {
+  inventoryItems?: InventoryItem[];
 }
 
-export function InventoryOverview() {
-  const inventoryItems: InventoryItem[] = [
-    { name: 'Fertilizers', quantity: 2850, trend: 'up', change: 12 },
-    { name: 'Seeds', quantity: 1450, trend: 'down', change: -5 },
-    { name: 'Pesticides', quantity: 680, trend: 'stable', change: 2 },
-    { name: 'Equipment', quantity: 45, trend: 'up', change: 8 },
-  ];
+export function InventoryOverview({ inventoryItems: propInventoryItems = [] }: InventoryOverviewProps) {
+  // If no inventory items provided, use empty array (will show nothing)
+  const inventoryItems = propInventoryItems || [];
+  
+  // Group by category and calculate totals
+  const categoryData = inventoryItems.reduce<Record<string, { quantity: number; value: number }>>((acc, item) => {
+    const cat = item.category || 'other';
+    if (!acc[cat]) {
+      acc[cat] = { quantity: 0, value: 0 };
+    }
+    acc[cat].quantity += item.quantity || 0;
+    acc[cat].value += (item.quantity || 0) * (item.pricePerUnit || 0);
+    return acc;
+  }, {});
+
+  const displayItems = Object.entries(categoryData)
+    .map(([name, data]) => ({
+      name: name.charAt(0).toUpperCase() + name.slice(1),
+      quantity: data.quantity,
+      value: data.value,
+    }))
+    .slice(0, 4); // Show top 4 categories
 
   return (
     <div className="fv-card">
       <h3 className="text-lg font-semibold text-foreground mb-4">Inventory Overview</h3>
       <div className="space-y-4">
-        {inventoryItems.map((item) => (
-          <div key={item.name} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
-            <div className="flex items-center gap-3">
-              <div className="h-2 w-2 rounded-full bg-primary" />
-              <span className="text-sm font-medium">{item.name}</span>
+        {displayItems.length > 0 ? (
+          displayItems.map((item) => (
+            <div key={item.name} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
+              <div className="flex items-center gap-3">
+                <div className="h-2 w-2 rounded-full bg-primary" />
+                <span className="text-sm font-medium">{item.name}</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-semibold">{item.quantity.toLocaleString()}</span>
+                <span className="text-xs text-muted-foreground">
+                  KES {(item.value / 1000).toFixed(0)}k
+                </span>
+              </div>
             </div>
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-semibold">{item.quantity.toLocaleString()}</span>
-              <span className={`text-xs font-medium ${
-                item.trend === 'up' ? 'text-fv-success' :
-                item.trend === 'down' ? 'text-destructive' :
-                'text-muted-foreground'
-              }`}>
-                {item.change > 0 ? '+' : ''}{item.change}%
-              </span>
-            </div>
-          </div>
-        ))}
+          ))
+        ) : (
+          <p className="text-sm text-muted-foreground text-center py-4">No inventory data available</p>
+        )}
       </div>
     </div>
   );
@@ -75,21 +88,56 @@ export function SalesOverview() {
   );
 }
 
-export function CropStageProgress() {
-  const stages = [
-    { name: 'Land Prep', progress: 100 },
-    { name: 'Nursery', progress: 100 },
-    { name: 'Transplant', progress: 65 },
-    { name: 'Growth', progress: 0 },
-    { name: 'Harvest', progress: 0 },
-  ];
+interface CropStageProgressProps {
+  stages?: Array<{ id?: string; name: string; startDate?: Date; endDate?: Date; stageIndex?: number; projectId?: string }>;
+}
+
+export function CropStageProgress({ stages: propStages = [] }: CropStageProgressProps) {
+  const stages = propStages || [];
+  
+  // Calculate progress for each stage
+  const stagesWithProgress = stages
+    .map((stage, index) => {
+      const today = new Date();
+      const start = stage.startDate ? new Date(stage.startDate) : undefined;
+      const end = stage.endDate ? new Date(stage.endDate) : undefined;
+      
+      let progress = 0;
+      if (start && end) {
+        if (today < start) {
+          progress = 0; // Not started
+        } else if (today > end) {
+          progress = 100; // Completed
+        } else {
+          // In progress - calculate percentage
+          const total = end.getTime() - start.getTime();
+          const elapsed = today.getTime() - start.getTime();
+          progress = Math.round((elapsed / total) * 100);
+        }
+      }
+      
+      // Create unique key using id, or projectId + stageIndex, or fallback to index
+      const uniqueKey = stage.id || `${stage.projectId || 'unknown'}-${stage.stageIndex ?? index}-${stage.name}`;
+      
+      return {
+        key: uniqueKey,
+        name: stage.name || `Stage ${stage.stageIndex || 0}`,
+        progress,
+        stageIndex: stage.stageIndex ?? index,
+      };
+    })
+    .sort((a, b) => {
+      // Sort by stage index
+      return (a.stageIndex || 0) - (b.stageIndex || 0);
+    });
 
   return (
     <div className="fv-card">
       <h3 className="text-lg font-semibold text-foreground mb-4">Crop Stage Progress</h3>
       <div className="space-y-4">
-        {stages.map((stage) => (
-          <div key={stage.name}>
+        {stagesWithProgress.length > 0 ? (
+          stagesWithProgress.map((stage) => (
+          <div key={stage.key}>
             <div className="flex items-center justify-between mb-1">
               <span className="text-sm font-medium">{stage.name}</span>
               <span className="text-xs text-muted-foreground">{stage.progress}%</span>
@@ -101,7 +149,10 @@ export function CropStageProgress() {
               />
             </div>
           </div>
-        ))}
+        ))
+        ) : (
+          <p className="text-sm text-muted-foreground text-center py-4">No stage data available</p>
+        )}
       </div>
     </div>
   );

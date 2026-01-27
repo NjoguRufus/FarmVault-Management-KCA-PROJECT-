@@ -1,12 +1,16 @@
 import React, { useMemo, useState } from 'react';
 import { Plus, Search, Download, MoreHorizontal, Calendar as CalendarIcon } from 'lucide-react';
 import { useProject } from '@/contexts/ProjectContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { ExpensesPieChart } from '@/components/dashboard/ExpensesPieChart';
 import { cn } from '@/lib/utils';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, updateDoc, writeBatch } from 'firebase/firestore';
 import { useCollection } from '@/hooks/useCollection';
-import { Expense, ExpenseCategory, CropStage } from '@/types';
+import { Expense, ExpenseCategory, CropStage, WorkLog } from '@/types';
+import { SimpleStatCard } from '@/components/dashboard/SimpleStatCard';
+import { useQueryClient } from '@tanstack/react-query';
+import { Wrench, CheckCircle, Clock } from 'lucide-react';
 import {
   Dialog,
   DialogTrigger,
@@ -24,11 +28,15 @@ import {
 } from '@/components/ui/select';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
+import { toDate, formatDate } from '@/lib/dateUtils';
 
 export default function ExpensesPage() {
   const { activeProject } = useProject();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
   const { data: allExpenses = [], isLoading } = useCollection<Expense>('expenses', 'expenses');
   const { data: allStages = [] } = useCollection<CropStage>('projectStages', 'projectStages');
+  const { data: allWorkLogs = [] } = useCollection<WorkLog>('workLogs', 'workLogs');
 
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
@@ -44,7 +52,7 @@ export default function ExpensesPage() {
       !search ||
       e.description.toLowerCase().includes(search.toLowerCase()) ||
       e.category.toLowerCase().includes(search.toLowerCase());
-    const d = new Date(e.date as any);
+    const d = toDate(e.date);
     const inRange =
       !dateRange ||
       (!dateRange.from && !dateRange.to) ||
@@ -72,6 +80,24 @@ export default function ExpensesPage() {
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState<ExpenseCategory>('labour');
   const [saving, setSaving] = useState(false);
+  const [labourExpensesOpen, setLabourExpensesOpen] = useState(false);
+  const [markingPaid, setMarkingPaid] = useState<string | null>(null);
+
+  // Get unpaid work logs for the active project
+  const unpaidWorkLogs = useMemo(() => {
+    if (!activeProject) return [];
+    return allWorkLogs.filter(
+      w => w.projectId === activeProject.id && 
+      w.companyId === activeProject.companyId &&
+      !w.paid &&
+      w.totalPrice && w.totalPrice > 0
+    ).sort((a, b) => {
+      const dateA = toDate(a.date);
+      const dateB = toDate(b.date);
+      if (!dateA || !dateB) return 0;
+      return dateB.getTime() - dateA.getTime();
+    });
+  }, [allWorkLogs, activeProject]);
 
   const currentStage = useMemo(() => {
     if (!activeProject) return null;
@@ -113,12 +139,67 @@ export default function ExpensesPage() {
         paid: false,
         createdAt: serverTimestamp(),
       });
+      
+      // Invalidate queries to refresh data immediately
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-expenses'] });
+      
       setAddOpen(false);
       setDescription('');
       setAmount('');
       setCategory('labour');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleMarkWorkLogAsPaid = async (log: WorkLog) => {
+    if (!activeProject || !user || !log.id || !log.totalPrice) return;
+    setMarkingPaid(log.id);
+    try {
+      const batch = writeBatch(db);
+      
+      // Update work log to paid
+      const workLogRef = doc(db, 'workLogs', log.id);
+      batch.update(workLogRef, {
+        paid: true,
+        paidAt: serverTimestamp(),
+        paidBy: user.id,
+        paidByName: user.name,
+      });
+
+      // Create expense entry
+      const expenseRef = doc(collection(db, 'expenses'));
+      batch.set(expenseRef, {
+        companyId: activeProject.companyId,
+        projectId: activeProject.id,
+        cropType: activeProject.cropType,
+        category: 'labour' as ExpenseCategory,
+        description: `Labour - ${log.workCategory} on ${formatDate(log.date)}`,
+        amount: log.totalPrice,
+        date: log.date,
+        stageIndex: log.stageIndex,
+        stageName: log.stageName,
+        syncedFromWorkLogId: log.id,
+        synced: true,
+        paid: true,
+        paidAt: serverTimestamp(),
+        paidBy: user.id,
+        paidByName: user.name,
+        createdAt: serverTimestamp(),
+      });
+
+      await batch.commit();
+
+      // Invalidate queries to refresh data immediately
+      queryClient.invalidateQueries({ queryKey: ['workLogs'] });
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-expenses'] });
+      
+      // Close dialog if no more unpaid work logs
+      // Note: This will happen automatically when the query refetches and unpaidWorkLogs updates
+    } finally {
+      setMarkingPaid(null);
     }
   };
 
@@ -137,6 +218,82 @@ export default function ExpensesPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          {unpaidWorkLogs.length > 0 && (
+            <>
+              <button 
+                className="fv-btn fv-btn--primary"
+                onClick={() => setLabourExpensesOpen(true)}
+              >
+                <Wrench className="h-4 w-4" />
+                Labour Expenses ({unpaidWorkLogs.length})
+              </button>
+              <Dialog open={labourExpensesOpen} onOpenChange={setLabourExpensesOpen}>
+                <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Labour Expenses - Unpaid Work Logs</DialogTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Mark work logs as paid to automatically create expense entries.
+                  </p>
+                </DialogHeader>
+                {unpaidWorkLogs.length === 0 ? (
+                  <div className="text-center py-8">
+                    <CheckCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <p className="text-sm text-muted-foreground">All work logs have been paid.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                  {unpaidWorkLogs.map((log) => (
+                    <div
+                      key={log.id}
+                      className="fv-card p-4 border"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <h4 className="font-semibold text-foreground">{log.workCategory}</h4>
+                            <span className="fv-badge fv-badge--warning text-xs">Unpaid</span>
+                          </div>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm text-muted-foreground mb-2">
+                            <div>
+                              <span className="font-medium">Date:</span> {formatDate(log.date)}
+                            </div>
+                            <div>
+                              <span className="font-medium">Stage:</span> {log.stageName}
+                            </div>
+                            <div>
+                              <span className="font-medium">People:</span> {log.numberOfPeople}
+                            </div>
+                            <div>
+                              <span className="font-medium">Rate:</span> {log.ratePerPerson ? `KES ${log.ratePerPerson.toLocaleString()}` : 'N/A'}
+                            </div>
+                          </div>
+                          {log.totalPrice && (
+                            <div className="mt-2">
+                              <span className="text-lg font-bold text-primary">
+                                Total: KES {log.totalPrice.toLocaleString()}
+                              </span>
+                            </div>
+                          )}
+                          {log.notes && (
+                            <p className="text-sm text-muted-foreground mt-2">{log.notes}</p>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => handleMarkWorkLogAsPaid(log)}
+                          disabled={markingPaid === log.id}
+                          className="fv-btn fv-btn--primary shrink-0"
+                        >
+                          {markingPaid === log.id ? 'Marking...' : 'Mark as Paid'}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                )}
+              </DialogContent>
+            </Dialog>
+          </>
+          )}
           <button className="fv-btn fv-btn--secondary">
             <Download className="h-4 w-4" />
             Export
@@ -219,21 +376,19 @@ export default function ExpensesPage() {
       {/* Summary Cards */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="fv-card">
-              <p className="text-sm text-muted-foreground mb-1">Total Expenses</p>
-              <p className="text-3xl font-bold text-foreground">{formatCurrency(totalExpenses)}</p>
-              <p className="text-xs text-muted-foreground mt-2">
-                From {expenses.length} transactions
-              </p>
-            </div>
-            <div className="fv-card">
-              <p className="text-sm text-muted-foreground mb-1">Filtered Total</p>
-              <p className="text-3xl font-bold text-foreground">{formatCurrency(totalExpenses)}</p>
-              <p className="text-xs text-muted-foreground mt-2">
-                Based on applied filters
-              </p>
-            </div>
+          <div className="grid grid-cols-2 gap-2 sm:gap-3">
+            <SimpleStatCard
+              title="Total Expenses"
+              value={formatCurrency(totalExpenses)}
+              subtitle={`From ${expenses.length} transactions`}
+              layout="vertical"
+            />
+            <SimpleStatCard
+              title="Filtered Total"
+              value={formatCurrency(totalExpenses)}
+              subtitle="Based on applied filters"
+              layout="vertical"
+            />
           </div>
 
           {/* Filters */}
@@ -323,11 +478,7 @@ export default function ExpensesPage() {
                   </td>
                   <td className="font-medium">{formatCurrency(expense.amount)}</td>
                   <td className="text-muted-foreground">
-                    {new Date(expense.date).toLocaleDateString('en-KE', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                    })}
+                    {formatDate(expense.date)}
                   </td>
                   <td>
                     <button className="p-2 hover:bg-muted rounded-lg transition-colors">
@@ -348,11 +499,7 @@ export default function ExpensesPage() {
                 <div>
                   <p className="font-medium text-foreground">{expense.description}</p>
                   <p className="text-xs text-muted-foreground">
-                    {new Date(expense.date).toLocaleDateString('en-KE', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                    })}
+                    {formatDate(expense.date)}
                   </p>
                 </div>
                 <span className="font-semibold">{formatCurrency(expense.amount)}</span>

@@ -178,6 +178,11 @@ export interface WorkLog {
 
   numberOfPeople: number;
   ratePerPerson?: number;
+  totalPrice?: number; // Auto-calculated: numberOfPeople * ratePerPerson
+
+  employeeId?: string; // Primary employee assigned (for backward compatibility)
+  employeeIds?: string[]; // Multiple employees assigned to manage and deliver this work
+  employeeName?: string; // Denormalized for easier display (comma-separated if multiple)
 
   chemicals?: {
     inventoryItemId: string;
@@ -199,8 +204,10 @@ export interface WorkLog {
   };
 
   notes?: string;
+  changeReason?: string; // Reason for changing work mid-way
 
   managerId?: string;
+  managerName?: string; // Denormalized manager name for easier display
   adminName?: string;
 
   paid?: boolean;
@@ -276,6 +283,7 @@ export interface Sale {
   totalAmount: number;
   date: Date;
   status: 'pending' | 'completed' | 'cancelled';
+  brokerId?: string; // ID of the broker who made the sale
 }
 
 export interface Supplier {
@@ -293,11 +301,31 @@ export interface Employee {
   id: string;
   companyId: string;
   name: string;
-  role: string;
+  role: string; // e.g., 'operations-manager', 'logistics-driver', 'sales-broker', 'truck_driver'
   department: string;
   contact: string;
   status: 'active' | 'on-leave' | 'inactive';
   joinDate: Date;
+}
+
+export interface Delivery {
+  id: string;
+  projectId: string;
+  companyId: string;
+  harvestId: string;
+  driverId?: string; // Employee ID of the driver
+  from: string; // Origin location
+  to: string; // Destination location
+  quantity: number;
+  unit: string;
+  status: 'pending' | 'in-transit' | 'delivered' | 'cancelled';
+  distance?: number; // Distance in km
+  fuelUsed?: number; // Fuel used in liters
+  startedAt?: Date;
+  completedAt?: Date;
+  date: Date;
+  notes?: string;
+  createdAt: Date;
 }
 
 export interface SeasonChallenge {

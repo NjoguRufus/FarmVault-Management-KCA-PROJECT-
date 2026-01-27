@@ -5,6 +5,7 @@ import { db } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { useCollection } from '@/hooks/useCollection';
 import { Supplier } from '@/types';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Dialog,
   DialogTrigger,
@@ -17,6 +18,7 @@ import { useAuth } from '@/contexts/AuthContext';
 
 export default function SuppliersPage() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const formatRating = (rating: number) => {
     return rating.toFixed(1);
   };
@@ -48,6 +50,10 @@ export default function SuppliersPage() {
         companyId: user.companyId,
         createdAt: serverTimestamp(),
       });
+      
+      // Invalidate queries to refresh data immediately
+      queryClient.invalidateQueries({ queryKey: ['suppliers'] });
+      
       setAddOpen(false);
       setName('');
       setContact('');

@@ -5,6 +5,8 @@ import { db } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { useCollection } from '@/hooks/useCollection';
 import { Employee } from '@/types';
+import { SimpleStatCard } from '@/components/dashboard/SimpleStatCard';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Dialog,
   DialogTrigger,
@@ -21,9 +23,11 @@ import {
   SelectItem,
 } from '@/components/ui/select';
 import { useAuth } from '@/contexts/AuthContext';
+import { formatDate } from '@/lib/dateUtils';
 
 export default function EmployeesPage() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const getStatusBadge = (status: string) => {
     const styles: Record<string, string> = {
       active: 'fv-badge--active',
@@ -72,6 +76,10 @@ export default function EmployeesPage() {
         joinDate: serverTimestamp(),
         createdAt: serverTimestamp(),
       });
+      
+      // Invalidate queries to refresh data immediately
+      queryClient.invalidateQueries({ queryKey: ['employees'] });
+      
       setAddOpen(false);
       setName('');
       setRole('operations-manager');
@@ -184,23 +192,24 @@ export default function EmployeesPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="fv-card">
-          <p className="text-sm text-muted-foreground mb-1">Total Employees</p>
-          <p className="text-2xl font-bold">{employees.length}</p>
-        </div>
-        <div className="fv-card">
-          <p className="text-sm text-muted-foreground mb-1">Active</p>
-          <p className="text-2xl font-bold text-fv-success">
-            {employees.filter(e => e.status === 'active').length}
-          </p>
-        </div>
-        <div className="fv-card">
-          <p className="text-sm text-muted-foreground mb-1">On Leave</p>
-          <p className="text-2xl font-bold text-fv-warning">
-            {employees.filter(e => e.status === 'on-leave').length}
-          </p>
-        </div>
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3">
+        <SimpleStatCard
+          title="Total Employees"
+          value={employees.length}
+          layout="vertical"
+        />
+        <SimpleStatCard
+          title="Active"
+          value={employees.filter(e => e.status === 'active').length}
+          valueVariant="success"
+          layout="vertical"
+        />
+        <SimpleStatCard
+          title="On Leave"
+          value={employees.filter(e => e.status === 'on-leave').length}
+          valueVariant="warning"
+          layout="vertical"
+        />
       </div>
 
       {/* Filters */}
@@ -262,10 +271,7 @@ export default function EmployeesPage() {
                       <div>
                         <span className="font-medium text-foreground">{employee.name}</span>
                         <p className="text-xs text-muted-foreground">
-                          Joined {new Date(employee.joinDate).toLocaleDateString('en-KE', {
-                            month: 'short',
-                            year: 'numeric',
-                          })}
+                          Joined {formatDate(employee.joinDate, { month: 'short', year: 'numeric' })}
                         </p>
                       </div>
                     </div>

@@ -6,9 +6,10 @@ import { Link } from 'react-router-dom';
 
 interface ProjectsTableProps {
   projects: Project[];
+  compact?: boolean;
 }
 
-export function ProjectsTable({ projects }: ProjectsTableProps) {
+export function ProjectsTable({ projects, compact = false }: ProjectsTableProps) {
   const getCropEmoji = (cropType: string) => {
     const emojis: Record<string, string> = {
       tomatoes: '🍅',
@@ -44,12 +45,14 @@ export function ProjectsTable({ projects }: ProjectsTableProps) {
   };
 
   return (
-    <div className="fv-card">
-      <div className="flex items-center justify-between mb-6">
-        <h3 className="text-lg font-semibold text-foreground">Current Projects</h3>
+    <div className={cn('fv-card', compact && 'p-3 sm:p-4')}>
+      <div className={cn('flex items-center justify-between', compact ? 'mb-3' : 'mb-6')}>
+        <h3 className={cn('font-semibold text-foreground', compact ? 'text-sm sm:text-base' : 'text-lg')}>
+          Current Projects
+        </h3>
         <Link 
           to="/projects"
-          className="text-sm text-primary hover:underline flex items-center gap-1"
+          className="text-xs sm:text-sm text-primary hover:underline flex items-center gap-1"
         >
           View All
           <ExternalLink className="h-3 w-3" />
@@ -58,46 +61,50 @@ export function ProjectsTable({ projects }: ProjectsTableProps) {
 
       {/* Desktop Table */}
       <div className="hidden md:block overflow-x-auto">
-        <table className="fv-table">
+        <table className={cn('fv-table', compact && 'text-sm')}>
           <thead>
             <tr>
-              <th>Project</th>
-              <th>Crop</th>
-              <th>Location</th>
-              <th>Acreage</th>
-              <th>Budget</th>
-              <th>Status</th>
-              <th></th>
+              <th className={compact ? 'py-2' : ''}>Project</th>
+              <th className={compact ? 'py-2' : ''}>Crop</th>
+              <th className={compact ? 'py-2' : ''}>Location</th>
+              <th className={compact ? 'py-2' : ''}>Acreage</th>
+              <th className={compact ? 'py-2' : ''}>Budget</th>
+              <th className={compact ? 'py-2' : ''}>Status</th>
+              <th className={compact ? 'py-2' : ''}></th>
             </tr>
           </thead>
           <tbody>
             {projects.map((project) => (
               <tr key={project.id}>
-                <td>
-                  <div className="flex items-center gap-3">
-                    <span className="text-xl">{getCropEmoji(project.cropType)}</span>
+                <td className={compact ? 'py-2' : ''}>
+                  <div className="flex items-center gap-2">
+                    <span className={compact ? 'text-lg' : 'text-xl'}>{getCropEmoji(project.cropType)}</span>
                     <div>
-                      <div className="font-medium text-foreground">{project.name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        Started {formatDate(project.startDate)}
+                      <div className={cn('font-medium text-foreground', compact && 'text-sm')}>
+                        {project.name}
                       </div>
+                      {!compact && (
+                        <div className="text-xs text-muted-foreground">
+                          Started {formatDate(project.startDate)}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </td>
-                <td>
+                <td className={compact ? 'py-2 text-sm' : ''}>
                   <span className="capitalize">{project.cropType.replace('-', ' ')}</span>
                 </td>
-                <td>{project.location}</td>
-                <td>{project.acreage} acres</td>
-                <td>{formatCurrency(project.budget)}</td>
-                <td>
-                  <span className={cn('fv-badge capitalize', getStatusBadge(project.status))}>
+                <td className={compact ? 'py-2 text-sm' : ''}>{project.location}</td>
+                <td className={compact ? 'py-2 text-sm' : ''}>{project.acreage} acres</td>
+                <td className={compact ? 'py-2 text-sm' : ''}>{formatCurrency(project.budget)}</td>
+                <td className={compact ? 'py-2' : ''}>
+                  <span className={cn('fv-badge capitalize text-xs', getStatusBadge(project.status))}>
                     {project.status}
                   </span>
                 </td>
-                <td>
-                  <button className="p-2 hover:bg-muted rounded-lg transition-colors">
-                    <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+                <td className={compact ? 'py-2' : ''}>
+                  <button className="p-1.5 hover:bg-muted rounded-lg transition-colors">
+                    <MoreHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
                   </button>
                 </td>
               </tr>
@@ -107,24 +114,26 @@ export function ProjectsTable({ projects }: ProjectsTableProps) {
       </div>
 
       {/* Mobile Cards */}
-      <div className="md:hidden space-y-3">
+      <div className="md:hidden space-y-2">
         {projects.map((project) => (
-          <div key={project.id} className="p-4 bg-muted/30 rounded-lg">
-            <div className="flex items-start justify-between mb-3">
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">{getCropEmoji(project.cropType)}</span>
+          <div key={project.id} className={cn('bg-muted/30 rounded-lg', compact ? 'p-2.5' : 'p-4')}>
+            <div className="flex items-start justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className={compact ? 'text-xl' : 'text-2xl'}>{getCropEmoji(project.cropType)}</span>
                 <div>
-                  <div className="font-medium text-foreground">{project.name}</div>
-                  <div className="text-xs text-muted-foreground capitalize">
+                  <div className={cn('font-medium text-foreground', compact && 'text-sm')}>
+                    {project.name}
+                  </div>
+                  <div className={cn('text-muted-foreground capitalize', compact ? 'text-xs' : 'text-xs')}>
                     {project.cropType.replace('-', ' ')} • {project.location}
                   </div>
                 </div>
               </div>
-              <span className={cn('fv-badge capitalize', getStatusBadge(project.status))}>
+              <span className={cn('fv-badge capitalize text-xs', getStatusBadge(project.status))}>
                 {project.status}
               </span>
             </div>
-            <div className="grid grid-cols-2 gap-2 text-sm">
+            <div className={cn('grid grid-cols-2 gap-2', compact ? 'text-xs' : 'text-sm')}>
               <div>
                 <span className="text-muted-foreground">Acreage:</span>
                 <span className="ml-1 font-medium">{project.acreage} acres</span>

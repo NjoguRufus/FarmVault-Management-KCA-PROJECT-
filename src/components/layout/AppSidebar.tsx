@@ -24,6 +24,7 @@ import { useAuth } from '@/contexts/AuthContext';
 
 const companyNavItems = [
   { title: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { title: 'My Dashboard', href: '/employee-dashboard', icon: LayoutDashboard, employeeOnly: true },
   { title: 'Projects', href: '/projects', icon: FolderKanban },
   { title: 'Crop Stages', href: '/crop-stages', icon: Layers },
   { title: 'Expenses', href: '/expenses', icon: Receipt },
@@ -56,18 +57,44 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
   const location = useLocation();
   const { user } = useAuth();
 
-  const navItems = user?.role === 'developer' ? developerNavItems : companyNavItems;
+  const baseNavItems = user?.role === 'developer' ? developerNavItems : companyNavItems;
+  
+  // Filter nav items based on user role
+  const navItems = baseNavItems.filter(item => {
+    // Show employee-only items only for employees
+    if ((item as any).employeeOnly) {
+      return user?.role === 'employee';
+    }
+    // Hide employee dashboard for non-employees
+    if (item.href === '/employee-dashboard' && user?.role !== 'employee') {
+      return false;
+    }
+    return true;
+  });
 
   return (
-    <aside
-      className={cn(
-        'fixed left-0 top-0 z-40 h-screen transition-all duration-300 fv-sidebar',
-        collapsed ? 'w-16' : 'w-60'
+    <>
+      {/* Mobile overlay when sidebar is open */}
+      {!collapsed && (
+        <div
+          className="fixed inset-0 bg-black/50 z-30 md:hidden transition-opacity duration-300"
+          onClick={onToggle}
+          aria-hidden="true"
+        />
       )}
-      style={{
-        boxShadow: 'var(--shadow-sidebar)',
-      }}
-    >
+      <aside
+        className={cn(
+          'fixed left-0 top-0 z-40 h-screen transition-all duration-300 fv-sidebar',
+          // On mobile: overlay behavior - slide in/out
+          // On desktop: always visible, just changes width
+          collapsed 
+            ? 'w-16 -translate-x-full md:translate-x-0' 
+            : 'w-60 translate-x-0'
+        )}
+        style={{
+          boxShadow: 'var(--shadow-sidebar)',
+        }}
+      >
       {/* Logo Section */}
       <div className="flex h-16 items-center justify-between px-4 border-b border-sidebar-border/30">
         <div className="flex items-center gap-3">
@@ -139,5 +166,6 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
         )}
       </button>
     </aside>
+    </>
   );
 }

@@ -7,6 +7,7 @@ import { Project } from '@/types';
 import { db } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
+import { formatDate } from '@/lib/dateUtils';
 
 export default function ProjectsPage() {
   const { user } = useAuth();
@@ -132,11 +133,7 @@ export default function ProjectsPage() {
             <div className="mt-4 pt-4 border-t border-border/50 flex items-center justify-between gap-2">
               <div className="flex flex-col">
                 <span className="text-xs text-muted-foreground">
-                  Started {new Date(project.startDate).toLocaleDateString('en-KE', {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric',
-                  })}
+                  Started {formatDate(project.startDate)}
                 </span>
               </div>
               <div className="flex gap-2">

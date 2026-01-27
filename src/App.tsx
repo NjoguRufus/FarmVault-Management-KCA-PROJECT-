@@ -8,6 +8,10 @@ import { ProjectProvider } from "@/contexts/ProjectContext";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { CompanyDashboard } from "@/pages/dashboard/CompanyDashboard";
 import { DeveloperDashboard } from "@/pages/dashboard/DeveloperDashboard";
+import { EmployeeDashboard } from "@/pages/dashboard/EmployeeDashboard";
+import { ManagerDashboard } from "@/pages/dashboard/ManagerDashboard";
+import { BrokerDashboard } from "@/pages/dashboard/BrokerDashboard";
+import { DriverDashboard } from "@/pages/dashboard/DriverDashboard";
 import ProjectsPage from "@/pages/ProjectsPage";
 import NewProjectPage from "@/pages/NewProjectPage";
 import ProjectDetailsPage from "@/pages/ProjectDetailsPage";
@@ -29,6 +33,9 @@ import Index from "@/pages/Index";
 import LoginPage from "@/pages/Auth/LoginPage";
 import { RequireAuth } from "@/components/auth/RequireAuth";
 import { RequireDeveloper } from "@/components/auth/RequireDeveloper";
+import { RequireManager } from "@/components/auth/RequireManager";
+import { RequireBroker } from "@/components/auth/RequireBroker";
+import { RequireDriver } from "@/components/auth/RequireDriver";
 import SetupCompany from "@/pages/SetupCompany";
 import AdminDashboard from "@/pages/admin/AdminDashboard";
 import AdminCompaniesPage from "@/pages/admin/AdminCompaniesPage";
@@ -78,6 +85,37 @@ const App = () => (
                 <Route path="/billing" element={<BillingPage />} />
                 <Route path="/support" element={<SupportPage />} />
                 <Route path="/feedback" element={<FeedbackPage />} />
+              </Route>
+
+              {/* Role-based dashboard routes */}
+              <Route
+                element={
+                  <RequireManager>
+                    <MainLayout />
+                  </RequireManager>
+                }
+              >
+                <Route path="/manager" element={<ManagerDashboard />} />
+              </Route>
+
+              <Route
+                element={
+                  <RequireBroker>
+                    <MainLayout />
+                  </RequireBroker>
+                }
+              >
+                <Route path="/broker" element={<BrokerDashboard />} />
+              </Route>
+
+              <Route
+                element={
+                  <RequireDriver>
+                    <MainLayout />
+                  </RequireDriver>
+                }
+              >
+                <Route path="/driver" element={<DriverDashboard />} />
               </Route>
 
               {/* Developer-only routes under /admin */}

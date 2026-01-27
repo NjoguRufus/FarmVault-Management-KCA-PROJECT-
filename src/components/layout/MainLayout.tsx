@@ -14,12 +14,17 @@ export function MainLayout() {
         collapsed={sidebarCollapsed}
         onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
       />
-      <TopNavbar sidebarCollapsed={sidebarCollapsed} />
+      <TopNavbar 
+        sidebarCollapsed={sidebarCollapsed} 
+        onSidebarToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+      />
       
       <main
         className={cn(
           'pt-16 min-h-screen transition-all duration-300',
-          sidebarCollapsed ? 'pl-16' : 'pl-60'
+          // On mobile, no padding (sidebar overlays)
+          // On desktop, add padding based on sidebar state
+          sidebarCollapsed ? 'md:pl-16' : 'md:pl-60'
         )}
       >
         <div className="p-6">

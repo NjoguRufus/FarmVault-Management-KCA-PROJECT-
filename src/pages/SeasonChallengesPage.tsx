@@ -6,6 +6,9 @@ import { db } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { useCollection } from '@/hooks/useCollection';
 import { SeasonChallenge } from '@/types';
+import { SimpleStatCard } from '@/components/dashboard/SimpleStatCard';
+import { useQueryClient } from '@tanstack/react-query';
+import { formatDate } from '@/lib/dateUtils';
 import {
   Dialog,
   DialogTrigger,
@@ -17,6 +20,7 @@ import {
 
 export default function SeasonChallengesPage() {
   const { activeProject } = useProject();
+  const queryClient = useQueryClient();
   const { data: allChallenges = [], isLoading } = useCollection<SeasonChallenge>('seasonChallenges', 'seasonChallenges');
 
   const challenges = activeProject
@@ -71,9 +75,14 @@ export default function SeasonChallengesPage() {
         projectId: activeProject.id,
         companyId: activeProject.companyId,
         cropType: activeProject.cropType,
+        stageIndex: activeProject.startingStageIndex || 0, // Add stageIndex if available
         dateIdentified: serverTimestamp(),
         createdAt: serverTimestamp(),
       });
+      
+      // Invalidate queries to refresh data immediately
+      queryClient.invalidateQueries({ queryKey: ['seasonChallenges'] });
+      
       setAddOpen(false);
       setTitle('');
       setDescription('');
@@ -169,34 +178,25 @@ export default function SeasonChallengesPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="fv-card flex items-center gap-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-destructive/10">
-            <AlertTriangle className="h-6 w-6 text-destructive" />
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">High Severity</p>
-            <p className="text-2xl font-bold">{challenges.filter(c => c.severity === 'high').length}</p>
-          </div>
-        </div>
-        <div className="fv-card flex items-center gap-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-fv-warning/10">
-            <Clock className="h-6 w-6 text-fv-warning" />
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">In Progress</p>
-            <p className="text-2xl font-bold">{challenges.filter(c => c.status === 'mitigating').length}</p>
-          </div>
-        </div>
-        <div className="fv-card flex items-center gap-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-fv-success/10">
-            <CheckCircle className="h-6 w-6 text-fv-success" />
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Resolved</p>
-            <p className="text-2xl font-bold">{challenges.filter(c => c.status === 'resolved').length}</p>
-          </div>
-        </div>
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3">
+        <SimpleStatCard
+          title="High Severity"
+          value={challenges.filter(c => c.severity === 'high').length}
+          icon={AlertTriangle}
+          iconVariant="destructive"
+        />
+        <SimpleStatCard
+          title="In Progress"
+          value={challenges.filter(c => c.status === 'mitigating').length}
+          icon={Clock}
+          iconVariant="warning"
+        />
+        <SimpleStatCard
+          title="Resolved"
+          value={challenges.filter(c => c.status === 'resolved').length}
+          icon={CheckCircle}
+          iconVariant="success"
+        />
       </div>
 
       {/* Challenges List */}
@@ -227,19 +227,11 @@ export default function SeasonChallengesPage() {
                 </div>
                 <div className="flex items-center gap-4 text-sm text-muted-foreground">
                   <span>
-                    Identified: {new Date(challenge.dateIdentified).toLocaleDateString('en-KE', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                    })}
+                    Identified: {formatDate(challenge.dateIdentified)}
                   </span>
                   {challenge.dateResolved && (
                     <span>
-                      Resolved: {new Date(challenge.dateResolved).toLocaleDateString('en-KE', {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric',
-                      })}
+                      Resolved: {formatDate(challenge.dateResolved)}
                     </span>
                   )}
                 </div>

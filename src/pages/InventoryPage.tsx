@@ -7,6 +7,8 @@ import { collection, addDoc, serverTimestamp, doc, writeBatch, increment } from 
 import { useCollection } from '@/hooks/useCollection';
 import { InventoryItem, InventoryCategory, ExpenseCategory, Supplier, CropType, InventoryCategoryItem } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
+import { SimpleStatCard } from '@/components/dashboard/SimpleStatCard';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Dialog,
   DialogTrigger,
@@ -191,6 +193,10 @@ export default function InventoryPage() {
 
       await addDoc(collection(db, 'inventoryItems'), data);
 
+      // Invalidate queries to refresh data immediately
+      queryClient.invalidateQueries({ queryKey: ['inventoryItems'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-inventory'] });
+
       if (countAsExpense) {
         const amount = Number(quantity || '0') * Number(pricePerUnit || '0');
         if (amount > 0) {
@@ -215,6 +221,10 @@ export default function InventoryPage() {
             paid: false,
             createdAt: serverTimestamp(),
           });
+          
+          // Invalidate expenses query
+          queryClient.invalidateQueries({ queryKey: ['expenses'] });
+          queryClient.invalidateQueries({ queryKey: ['dashboard-expenses'] });
         }
       }
 
@@ -294,6 +304,13 @@ export default function InventoryPage() {
       });
 
       await batch.commit();
+      
+      // Invalidate queries to refresh data immediately
+      queryClient.invalidateQueries({ queryKey: ['inventoryItems'] });
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-inventory'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-expenses'] });
+      
       setRestockOpen(false);
     } finally {
       setRestockSaving(false);
@@ -335,7 +352,7 @@ export default function InventoryPage() {
               Add Item
             </button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Add Inventory Item</DialogTitle>
             </DialogHeader>
@@ -569,7 +586,7 @@ export default function InventoryPage() {
 
       {/* Restock dialog */}
       <Dialog open={restockOpen} onOpenChange={setRestockOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Restock Inventory</DialogTitle>
           </DialogHeader>
@@ -633,29 +650,30 @@ export default function InventoryPage() {
       </Dialog>
 
       {/* Summary Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="fv-card">
-          <p className="text-sm text-muted-foreground mb-1">Total Items</p>
-          <p className="text-2xl font-bold">{inventory.length}</p>
-        </div>
-        <div className="fv-card">
-          <p className="text-sm text-muted-foreground mb-1">Total Value</p>
-          <p className="text-2xl font-bold">
-            {formatCurrency(inventory.reduce((sum, i) => sum + (i.quantity * (i.pricePerUnit || 0)), 0))}
-          </p>
-        </div>
-        <div className="fv-card">
-          <p className="text-sm text-muted-foreground mb-1">Low Stock Alerts</p>
-          <p className="text-2xl font-bold text-fv-warning">
-            {inventory.filter(isLowStock).length}
-          </p>
-        </div>
-        <div className="fv-card">
-          <p className="text-sm text-muted-foreground mb-1">Suppliers</p>
-          <p className="text-2xl font-bold">
-            {new Set(inventory.map(i => i.supplierId)).size}
-          </p>
-        </div>
+      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
+        <SimpleStatCard
+          title="Total Items"
+          value={inventory.length}
+          layout="vertical"
+        />
+        <SimpleStatCard
+          title="Total Value"
+          value={formatCurrency(inventory.reduce((sum, i) => sum + (i.quantity * (i.pricePerUnit || 0)), 0))}
+          layout="vertical"
+        />
+        <SimpleStatCard
+          title="Low Stock Alerts"
+          value={inventory.filter(isLowStock).length}
+          icon={AlertTriangle}
+          iconVariant="warning"
+          valueVariant="warning"
+          layout="vertical"
+        />
+        <SimpleStatCard
+          title="Suppliers"
+          value={new Set(inventory.map(i => i.supplierId)).size}
+          layout="vertical"
+        />
       </div>
 
       {/* Filters */}

@@ -6,6 +6,7 @@ import { db } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { CropType } from '@/types';
 import { cropStageConfig, generateStageTimeline, getCropStages } from '@/lib/cropStageConfig';
+import { useQueryClient } from '@tanstack/react-query';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
@@ -53,21 +54,55 @@ export default function NewProjectPage() {
         createdBy: user.id,
       });
 
+      const stageDefs = getCropStages(cropType);
       const timeline = generateStageTimeline(cropType, plantingDate, startingStageIndex);
-
-      for (const stage of timeline) {
-        await addDoc(collection(db, 'projectStages'), {
-          projectId: projectRef.id,
-          companyId: user.companyId,
-          cropType,
-          stageName: stage.stageName,
-          stageIndex: stage.stageIndex,
-          startDate: stage.startDate,
-          endDate: stage.endDate,
-          expectedDurationDays: stage.expectedDurationDays,
-          createdAt: serverTimestamp(),
-        });
+      
+      // Create all stages: completed ones before starting index, and future ones
+      for (let i = 0; i < stageDefs.length; i++) {
+        const def = stageDefs[i];
+        
+        if (i < startingStageIndex) {
+          // Create completed stages for stages before the starting index
+          const completedStartDate = new Date(plantingDate);
+          completedStartDate.setDate(completedStartDate.getDate() - (startingStageIndex - i) * 7); // Rough estimate
+          const completedEndDate = new Date(completedStartDate);
+          completedEndDate.setDate(completedEndDate.getDate() + def.expectedDurationDays - 1);
+          
+          await addDoc(collection(db, 'projectStages'), {
+            projectId: projectRef.id,
+            companyId: user.companyId,
+            cropType,
+            stageName: def.name,
+            stageIndex: def.order,
+            startDate: completedStartDate,
+            endDate: completedEndDate,
+            expectedDurationDays: def.expectedDurationDays,
+            status: 'completed',
+            createdAt: serverTimestamp(),
+          });
+        } else {
+          // Create stages from the timeline (starting from startingStageIndex)
+          const timelineStage = timeline.find(t => t.stageIndex === def.order);
+          if (timelineStage) {
+            await addDoc(collection(db, 'projectStages'), {
+              projectId: projectRef.id,
+              companyId: user.companyId,
+              cropType,
+              stageName: timelineStage.stageName,
+              stageIndex: timelineStage.stageIndex,
+              startDate: timelineStage.startDate,
+              endDate: timelineStage.endDate,
+              expectedDurationDays: timelineStage.expectedDurationDays,
+              createdAt: serverTimestamp(),
+            });
+          }
+        }
       }
+
+      // Invalidate queries to refresh data immediately
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      queryClient.invalidateQueries({ queryKey: ['projectStages'] });
+      queryClient.invalidateQueries({ queryKey: ['project'] });
 
       navigate('/projects', { replace: true });
     } finally {
