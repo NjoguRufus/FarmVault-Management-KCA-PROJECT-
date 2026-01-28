@@ -328,6 +328,8 @@ export interface Delivery {
   createdAt: Date;
 }
 
+export type ChallengeType = 'weather' | 'pests' | 'diseases' | 'prices' | 'labor' | 'equipment' | 'other';
+
 export interface SeasonChallenge {
   id: string;
   projectId: string;
@@ -335,10 +337,43 @@ export interface SeasonChallenge {
   cropType: CropType;
   title: string;
   description: string;
+  challengeType?: ChallengeType; // Type of challenge (weather, pests, prices, etc.)
+  stageIndex?: number; // Link to crop stage
+  stageName?: string; // Denormalized stage name
   severity: 'low' | 'medium' | 'high';
   status: 'identified' | 'mitigating' | 'resolved';
   dateIdentified: Date;
   dateResolved?: Date;
+  // Detailed resolution information
+  whatWasDone?: string; // What actions were taken to resolve
+  itemsUsed?: Array<{
+    // Either inventoryItemId (if exists in inventory) or itemName (if needs to be purchased)
+    inventoryItemId?: string;
+    itemName: string; // Name of the item (required)
+    category: InventoryCategory; // Category of the item
+    quantity: number;
+    unit: string;
+    needsPurchase?: boolean; // True if item doesn't exist in inventory
+  }>;
+  plan2IfFails?: string; // Backup plan if current solution fails
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+// Items that need to be purchased (derived from challenges)
+export interface NeededItem {
+  id: string;
+  companyId: string;
+  projectId?: string;
+  itemName: string;
+  category: InventoryCategory;
+  quantity: number;
+  unit: string;
+  sourceChallengeId?: string; // ID of the challenge that created this need
+  sourceChallengeTitle?: string; // Denormalized challenge title
+  status: 'pending' | 'ordered' | 'received';
+  createdAt: Date;
+  updatedAt?: Date;
 }
 
 export interface DashboardStats {

@@ -1,22 +1,36 @@
 import React, { useState, useMemo } from 'react';
-import { Search, MoreHorizontal, AlertCircle, CheckCircle, Clock, X, Package, Wrench, AlertTriangle } from 'lucide-react';
+import { Search, MoreHorizontal, AlertCircle, CheckCircle, Clock, X, Package, Wrench, AlertTriangle, Plus, Cloud, Bug, DollarSign, Users, Wrench as WrenchIcon, Droplets } from 'lucide-react';
 import { useProject } from '@/contexts/ProjectContext';
 import { cn } from '@/lib/utils';
 import { useCollection } from '@/hooks/useCollection';
-import { CropStage, WorkLog, SeasonChallenge, InventoryUsage, InventoryItem } from '@/types';
+import { CropStage, WorkLog, SeasonChallenge, InventoryUsage, InventoryItem, ChallengeType } from '@/types';
 import { SimpleStatCard } from '@/components/dashboard/SimpleStatCard';
 import { getCropStages } from '@/lib/cropStageConfig';
 import { addDays } from 'date-fns';
 import { toDate, formatDate } from '@/lib/dateUtils';
+import { db } from '@/lib/firebase';
+import { doc, updateDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 export default function CropStagesPage() {
   const { activeProject } = useProject();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
   const { data: allStages = [], isLoading } = useCollection<CropStage>('projectStages', 'projectStages');
   const { data: allWorkLogs = [] } = useCollection<WorkLog>('workLogs', 'workLogs');
   const { data: allChallenges = [] } = useCollection<SeasonChallenge>('seasonChallenges', 'seasonChallenges');
@@ -25,6 +39,12 @@ export default function CropStagesPage() {
 
   const [selectedStage, setSelectedStage] = useState<CropStage | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [markingComplete, setMarkingComplete] = useState(false);
+  const [addChallengeOpen, setAddChallengeOpen] = useState(false);
+  const [challengeTitle, setChallengeTitle] = useState('');
+  const [challengeDescription, setChallengeDescription] = useState('');
+  const [challengeType, setChallengeType] = useState<ChallengeType>('other');
+  const [challengeSeverity, setChallengeSeverity] = useState<'low' | 'medium' | 'high'>('medium');
 
   const projectStages = activeProject
     ? allStages.filter(s => s.projectId === activeProject.id)
@@ -120,6 +140,69 @@ export default function CropStagesPage() {
     if (today < start) return 'pending';
     if (today > end) return 'completed';
     return 'in-progress';
+  };
+
+  const getChallengeTypeIcon = (type: ChallengeType) => {
+    // 3D colored emoji icons
+    const icons: Record<ChallengeType, string> = {
+      weather: '🌦️',
+      pests: '🐛',
+      diseases: '🦠',
+      prices: '💰',
+      labor: '👷',
+      equipment: '🔧',
+      other: '⚠️',
+    };
+    return <span className="text-2xl">{icons[type] || icons.other}</span>;
+  };
+
+  const handleMarkStageComplete = async () => {
+    if (!selectedStage || !activeProject || selectedStage.id?.startsWith('placeholder-')) return;
+    setMarkingComplete(true);
+    try {
+      const today = new Date();
+      const stageRef = doc(db, 'projectStages', selectedStage.id);
+      await updateDoc(stageRef, {
+        endDate: today,
+        status: 'completed',
+        updatedAt: serverTimestamp(),
+      });
+      queryClient.invalidateQueries({ queryKey: ['projectStages'] });
+      setDetailsOpen(false);
+    } catch (error) {
+      console.error('Error marking stage complete:', error);
+    } finally {
+      setMarkingComplete(false);
+    }
+  };
+
+  const handleAddChallenge = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedStage || !activeProject || !user) return;
+    try {
+      await addDoc(collection(db, 'seasonChallenges'), {
+        title: challengeTitle,
+        description: challengeDescription,
+        challengeType,
+        severity: challengeSeverity,
+        status: 'identified',
+        projectId: activeProject.id,
+        companyId: activeProject.companyId,
+        cropType: activeProject.cropType,
+        stageIndex: selectedStage.stageIndex,
+        stageName: selectedStage.stageName,
+        dateIdentified: serverTimestamp(),
+        createdAt: serverTimestamp(),
+      });
+      queryClient.invalidateQueries({ queryKey: ['seasonChallenges'] });
+      setAddChallengeOpen(false);
+      setChallengeTitle('');
+      setChallengeDescription('');
+      setChallengeType('other');
+      setChallengeSeverity('medium');
+    } catch (error) {
+      console.error('Error adding challenge:', error);
+    }
   };
 
   return (
@@ -268,6 +351,28 @@ export default function CropStagesPage() {
           
           {selectedStage && activeProject && (
             <div className="space-y-6">
+              {/* Stage Actions */}
+              <div className="flex flex-wrap gap-2 pb-4 border-b">
+                {getDerivedStatus(selectedStage.startDate, selectedStage.endDate) !== 'completed' && 
+                 !selectedStage.id?.startsWith('placeholder-') && (
+                  <button
+                    onClick={handleMarkStageComplete}
+                    disabled={markingComplete}
+                    className="fv-btn fv-btn--primary"
+                  >
+                    <CheckCircle className="h-4 w-4" />
+                    {markingComplete ? 'Marking...' : 'Mark as Complete'}
+                  </button>
+                )}
+                <button
+                  onClick={() => setAddChallengeOpen(true)}
+                  className="fv-btn fv-btn--secondary"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Challenge
+                </button>
+              </div>
+
               {/* Stage Info */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div>
@@ -315,9 +420,9 @@ export default function CropStagesPage() {
                   Challenges Encountered
                 </h3>
                 {(() => {
-                  // Filter challenges for this project (stageIndex may not exist on all challenges)
+                  // Filter challenges for this project and stage
                   const stageChallenges = allChallenges.filter(
-                    c => c.projectId === activeProject.id && (c as any).stageIndex === selectedStage.stageIndex
+                    c => c.projectId === activeProject.id && c.stageIndex === selectedStage.stageIndex
                   );
                   
                   if (stageChallenges.length === 0) {
@@ -330,7 +435,14 @@ export default function CropStagesPage() {
                         <div key={challenge.id} className="fv-card p-3">
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
-                              <h4 className="font-medium text-foreground">{challenge.title}</h4>
+                              <div className="flex items-center gap-2 mb-1">
+                                {challenge.challengeType && (
+                                  <div className="text-muted-foreground">
+                                    {getChallengeTypeIcon(challenge.challengeType)}
+                                  </div>
+                                )}
+                                <h4 className="font-medium text-foreground">{challenge.title}</h4>
+                              </div>
                               <p className="text-sm text-muted-foreground mt-1">{challenge.description}</p>
                               <div className="flex items-center gap-2 mt-2">
                                 <span className={cn('fv-badge text-xs', 
@@ -347,6 +459,11 @@ export default function CropStagesPage() {
                                 )}>
                                   {challenge.status}
                                 </span>
+                                {challenge.challengeType && (
+                                  <span className="fv-badge text-xs bg-muted text-muted-foreground capitalize">
+                                    {challenge.challengeType}
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -471,6 +588,118 @@ export default function CropStagesPage() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Challenge Modal */}
+      <Dialog open={addChallengeOpen} onOpenChange={setAddChallengeOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Add Season Challenge</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleAddChallenge} className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-foreground">Challenge Type</label>
+              <Select value={challengeType} onValueChange={(value) => setChallengeType(value as ChallengeType)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="weather">
+                    <div className="flex items-center gap-2">
+                      <Cloud className="h-4 w-4" />
+                      Weather
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="pests">
+                    <div className="flex items-center gap-2">
+                      <Bug className="h-4 w-4" />
+                      Pests
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="diseases">
+                    <div className="flex items-center gap-2">
+                      <Droplets className="h-4 w-4" />
+                      Diseases
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="prices">
+                    <div className="flex items-center gap-2">
+                      <DollarSign className="h-4 w-4" />
+                      Prices
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="labor">
+                    <div className="flex items-center gap-2">
+                      <Users className="h-4 w-4" />
+                      Labor
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="equipment">
+                    <div className="flex items-center gap-2">
+                      <WrenchIcon className="h-4 w-4" />
+                      Equipment
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="other">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4" />
+                      Other
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-foreground">Title</label>
+              <input
+                className="fv-input"
+                value={challengeTitle}
+                onChange={(e) => setChallengeTitle(e.target.value)}
+                required
+                placeholder="e.g., Heavy rainfall affecting irrigation"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-foreground">Description</label>
+              <textarea
+                className="fv-input resize-none"
+                rows={4}
+                value={challengeDescription}
+                onChange={(e) => setChallengeDescription(e.target.value)}
+                required
+                placeholder="Describe the challenge in detail..."
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-foreground">Severity</label>
+              <Select value={challengeSeverity} onValueChange={(value) => setChallengeSeverity(value as 'low' | 'medium' | 'high')}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <DialogFooter>
+              <button
+                type="button"
+                className="fv-btn fv-btn--secondary"
+                onClick={() => setAddChallengeOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="fv-btn fv-btn--primary"
+              >
+                Add Challenge
+              </button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

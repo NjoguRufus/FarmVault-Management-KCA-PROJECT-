@@ -1,14 +1,15 @@
 import React, { useMemo, useState } from 'react';
-import { Plus, Search, Package, MoreHorizontal, AlertTriangle } from 'lucide-react';
+import { Plus, Search, Package, MoreHorizontal, AlertTriangle, ShoppingCart } from 'lucide-react';
 import { useProject } from '@/contexts/ProjectContext';
 import { cn } from '@/lib/utils';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp, doc, writeBatch, increment } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, writeBatch, increment, updateDoc } from 'firebase/firestore';
 import { useCollection } from '@/hooks/useCollection';
-import { InventoryItem, InventoryCategory, ExpenseCategory, Supplier, CropType, InventoryCategoryItem } from '@/types';
+import { InventoryItem, InventoryCategory, ExpenseCategory, Supplier, CropType, InventoryCategoryItem, NeededItem } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { SimpleStatCard } from '@/components/dashboard/SimpleStatCard';
 import { useQueryClient } from '@tanstack/react-query';
+import { formatDate } from '@/lib/dateUtils';
 import {
   Dialog,
   DialogTrigger,
@@ -24,12 +25,20 @@ import {
   SelectContent,
   SelectItem,
 } from '@/components/ui/select';
+import {
+  Drawer,
+  DrawerContent,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerDescription,
+} from '@/components/ui/drawer';
 
 export default function InventoryPage() {
   const { activeProject } = useProject();
   const { user } = useAuth();
   const { data: allInventory = [], isLoading } = useCollection<InventoryItem>('inventoryItems', 'inventoryItems');
   const { data: suppliers = [] } = useCollection<Supplier>('suppliers', 'suppliers');
+  const { data: neededItems = [] } = useCollection<NeededItem>('neededItems', 'neededItems');
   
   // Fetch categories for the company
   const { data: allCategories = [] } = useCollection<InventoryCategoryItem>(
@@ -60,7 +69,14 @@ export default function InventoryPage() {
   const formatCurrency = (amount: number) => `KES ${amount.toLocaleString()}`;
 
   const getCategoryIcon = (category: string) => {
-    return <Package className="h-5 w-5" />;
+    // Personalized icons for each category
+    const icons: Record<string, string> = {
+      fertilizer: '🌾',
+      chemical: '🧪',
+      diesel: '⛽',
+      materials: '🔧',
+    };
+    return <span className="text-2xl">{icons[category.toLowerCase()] || '📦'}</span>;
   };
 
   const getCategoryColor = (category: string) => {
@@ -96,6 +112,9 @@ export default function InventoryPage() {
   const [restockSaving, setRestockSaving] = useState(false);
 
   const [cropFilter, setCropFilter] = useState<'all' | CropType>('all');
+  const [neededOpen, setNeededOpen] = useState(false);
+  const [categoryDrawerOpen, setCategoryDrawerOpen] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
   const cropOptions: CropType[] = ['tomatoes', 'french-beans', 'capsicum', 'maize', 'watermelons', 'rice'];
 
@@ -118,6 +137,29 @@ export default function InventoryPage() {
           // Items without explicit crop binding are treated as general stock.
           return true;
         });
+  
+  // Filter needed items for current company/project
+  const filteredNeededItems = useMemo(() => {
+    if (!user?.companyId) return [];
+    return neededItems.filter(item => {
+      if (item.companyId !== user.companyId) return false;
+      if (activeProject && item.projectId && item.projectId !== activeProject.id) return false;
+      return item.status === 'pending';
+    });
+  }, [neededItems, user?.companyId, activeProject]);
+
+  // Get items for selected category
+  const categoryItemsList = useMemo(() => {
+    if (!selectedCategory) return [];
+    return filteredInventory.filter(
+      item => item.category.toLowerCase() === selectedCategory.toLowerCase()
+    );
+  }, [filteredInventory, selectedCategory]);
+
+  const handleCategoryCardClick = (category: string) => {
+    setSelectedCategory(category);
+    setCategoryDrawerOpen(true);
+  };
 
   const handleAddCategory = async (categoryName: string) => {
     if (!user?.companyId || !categoryName.trim()) return;
@@ -331,257 +373,322 @@ export default function InventoryPage() {
             )}
           </p>
         </div>
-        <Dialog 
-          open={addOpen} 
-          onOpenChange={(open) => {
-            // Allow opening the dialog
-            if (open) {
-              setAddOpen(true);
-            } else {
-              // Only allow closing if not currently saving
-              // This prevents the dialog from closing during form submission or select interactions
-              if (!saving) {
-                setAddOpen(false);
+        <div className="flex gap-2">
+          <Dialog 
+            open={addOpen} 
+            onOpenChange={(open) => {
+              // Allow opening the dialog
+              if (open) {
+                setAddOpen(true);
+              } else {
+                // Only allow closing if not currently saving
+                // This prevents the dialog from closing during form submission or select interactions
+                if (!saving) {
+                  setAddOpen(false);
+                }
               }
-            }
-          }}
-        >
-          <DialogTrigger asChild>
-            <button className="fv-btn fv-btn--primary">
-              <Plus className="h-4 w-4" />
-              Add Item
-            </button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Add Inventory Item</DialogTitle>
-            </DialogHeader>
-            {!activeProject ? (
-              <p className="text-sm text-muted-foreground">
-                Select a project first to add an inventory item.
-              </p>
-            ) : (
-              <form 
-                onSubmit={handleAddItem} 
-                className="space-y-4"
-                onKeyDown={(e) => {
-                  // Prevent Enter key from closing dialog if pressed in form
-                  if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
-                    // Allow normal form submission
-                  }
-                }}
-              >
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-foreground">Item name</label>
-                  <input
-                    className="fv-input"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-foreground">Crop scope (optional)</label>
-                  <p className="text-xs text-muted-foreground mb-1">
-                    Select the crops this item is used for. Leave all unchecked to make it available for all crops.
-                  </p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {cropOptions.map((crop) => (
-                      <button
-                        key={crop}
-                        type="button"
-                        onClick={() => toggleCropSelection(crop)}
-                        className={cn(
-                          'flex items-center gap-2 rounded-md border px-2 py-1.5 text-xs',
-                          selectedCrops.includes(crop)
-                            ? 'border-primary bg-primary/10 text-primary'
-                            : 'border-border bg-background text-foreground',
-                        )}
-                      >
-                        <span
-                          className={cn(
-                            'inline-flex h-3 w-3 items-center justify-center rounded-[3px] border',
-                            selectedCrops.includes(crop)
-                              ? 'border-primary bg-primary'
-                              : 'border-muted bg-background',
-                          )}
-                        >
-                          {selectedCrops.includes(crop) && (
-                            <span className="block h-2 w-2 bg-background rounded-[2px]" />
-                          )}
-                        </span>
-                        <span className="capitalize">{crop.replace('-', ' ')}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            }}
+          >
+            <DialogTrigger asChild>
+              <button className="fv-btn fv-btn--primary">
+                <Plus className="h-4 w-4" />
+                Add Item
+              </button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Add Inventory Item</DialogTitle>
+              </DialogHeader>
+              {!activeProject ? (
+                <p className="text-sm text-muted-foreground">
+                  Select a project first to add an inventory item.
+                </p>
+              ) : (
+                <form 
+                  onSubmit={handleAddItem} 
+                  className="space-y-4"
+                  onKeyDown={(e) => {
+                    // Prevent Enter key from closing dialog if pressed in form
+                    if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
+                      // Allow normal form submission
+                    }
+                  }}
+                >
                   <div className="space-y-1">
-                    <label className="text-sm font-medium text-foreground">Category</label>
-                    {!showNewCategoryInput ? (
-                      <div className="flex gap-2">
-                        <Select
-                          value={category}
-                          onValueChange={(value) => {
-                            if (value === '__new__') {
-                              setShowNewCategoryInput(true);
-                            } else {
-                              setCategory(value);
-                            }
-                          }}
+                    <label className="text-sm font-medium text-foreground">Item name</label>
+                    <input
+                      className="fv-input"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-foreground">Crop scope (optional)</label>
+                    <p className="text-xs text-muted-foreground mb-1">
+                      Select the crops this item is used for. Leave all unchecked to make it available for all crops.
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {cropOptions.map((crop) => (
+                        <button
+                          key={crop}
+                          type="button"
+                          onClick={() => toggleCropSelection(crop)}
+                          className={cn(
+                            'flex items-center gap-2 rounded-md border px-2 py-1.5 text-xs',
+                            selectedCrops.includes(crop)
+                              ? 'border-primary bg-primary/10 text-primary'
+                              : 'border-border bg-background text-foreground',
+                          )}
                         >
-                          <SelectTrigger className="flex-1">
-                            <SelectValue placeholder="Select category" />
+                          <span
+                            className={cn(
+                              'inline-flex h-3 w-3 items-center justify-center rounded-[3px] border',
+                              selectedCrops.includes(crop)
+                                ? 'border-primary bg-primary'
+                                : 'border-muted bg-background',
+                            )}
+                          >
+                            {selectedCrops.includes(crop) && (
+                              <span className="block h-2 w-2 bg-background rounded-[2px]" />
+                            )}
+                          </span>
+                          <span className="capitalize">{crop.replace('-', ' ')}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-sm font-medium text-foreground">Category</label>
+                      <div className="flex gap-2">
+                        <Select value={category} onValueChange={setCategory}>
+                          <SelectTrigger>
+                            <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
                             {availableCategories.map((cat) => (
                               <SelectItem key={cat} value={cat.toLowerCase()}>
-                                {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                                <div className="flex items-center gap-2">
+                                  <span className="text-lg">{getCategoryIcon(cat)}</span>
+                                  <span>{cat.charAt(0).toUpperCase() + cat.slice(1)}</span>
+                                </div>
                               </SelectItem>
                             ))}
-                            <SelectItem value="__new__">
-                              <span className="flex items-center gap-2">
-                                <Plus className="h-3 w-3" />
-                                Add new category
-                              </span>
-                            </SelectItem>
                           </SelectContent>
                         </Select>
+                        <button
+                          type="button"
+                          onClick={() => setShowNewCategoryInput(!showNewCategoryInput)}
+                          className="fv-btn fv-btn--secondary shrink-0"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </button>
                       </div>
-                    ) : (
-                      <div className="flex gap-2">
-                        <input
-                          className="fv-input flex-1"
-                          value={newCategoryName}
-                          onChange={(e) => setNewCategoryName(e.target.value)}
-                          placeholder="Enter new category name"
-                          autoFocus
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
+                      {showNewCategoryInput && (
+                        <div className="flex gap-2 mt-2">
+                          <input
+                            className="fv-input"
+                            value={newCategoryName}
+                            onChange={(e) => setNewCategoryName(e.target.value)}
+                            placeholder="New category name"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
                               if (newCategoryName.trim()) {
                                 handleAddCategory(newCategoryName);
                               }
-                            } else if (e.key === 'Escape') {
-                              setShowNewCategoryInput(false);
-                              setNewCategoryName('');
-                            }
-                          }}
-                        />
+                            }}
+                            className="fv-btn fv-btn--primary"
+                          >
+                            Add
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-sm font-medium text-foreground">Quantity</label>
+                      <input
+                        type="number"
+                        className="fv-input"
+                        value={quantity}
+                        onChange={(e) => setQuantity(e.target.value)}
+                        min="0"
+                        step="0.01"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-sm font-medium text-foreground">Unit</label>
+                      <input
+                        className="fv-input"
+                        value={unit}
+                        onChange={(e) => setUnit(e.target.value)}
+                        placeholder="kg, L, etc."
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-sm font-medium text-foreground">Price per unit (KES)</label>
+                      <input
+                        type="number"
+                        className="fv-input"
+                        value={pricePerUnit}
+                        onChange={(e) => setPricePerUnit(e.target.value)}
+                        min="0"
+                        step="0.01"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-sm font-medium text-foreground">Supplier (optional)</label>
+                      <Select value={selectedSupplierId} onValueChange={setSelectedSupplierId}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select supplier" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {suppliers
+                            .filter((s) => s.companyId === activeProject.companyId)
+                            .map((supplier) => (
+                              <SelectItem key={supplier.id} value={supplier.id}>
+                                {supplier.name}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-sm font-medium text-foreground">Min threshold</label>
+                      <input
+                        type="number"
+                        className="fv-input"
+                        value="10"
+                        readOnly
+                        disabled
+                      />
+                      <p className="text-xs text-muted-foreground">Default: 10 units</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="countAsExpense"
+                      checked={countAsExpense}
+                      onChange={(e) => setCountAsExpense(e.target.checked)}
+                      className="rounded border-gray-300"
+                    />
+                    <label htmlFor="countAsExpense" className="text-sm text-foreground">
+                      Count initial stock as expense
+                    </label>
+                  </div>
+                  <DialogFooter>
+                    <button
+                      type="button"
+                      className="fv-btn fv-btn--secondary"
+                      onClick={() => {
+                        setAddOpen(false);
+                        setName('');
+                        setCategory('fertilizer');
+                        setQuantity('');
+                        setUnit('kg');
+                        setPricePerUnit('');
+                        setSelectedCrops([]);
+                        setSelectedSupplierId('');
+                        setCountAsExpense(false);
+                        setShowNewCategoryInput(false);
+                        setNewCategoryName('');
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={saving}
+                      className="fv-btn fv-btn--primary"
+                      onClick={(e) => {
+                        // Prevent any default close behavior
+                        e.stopPropagation();
+                      }}
+                    >
+                      {saving ? 'Saving…' : 'Save Item'}
+                    </button>
+                  </DialogFooter>
+                </form>
+              )}
+            </DialogContent>
+          </Dialog>
+          <Dialog open={neededOpen} onOpenChange={setNeededOpen}>
+            <DialogTrigger asChild>
+              <button className="fv-btn fv-btn--secondary relative">
+                <ShoppingCart className="h-4 w-4" />
+                Needed
+                {filteredNeededItems.length > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-xs text-destructive-foreground">
+                    {filteredNeededItems.length}
+                  </span>
+                )}
+              </button>
+            </DialogTrigger>
+            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto w-[95vw] sm:w-[90vw] md:w-full max-w-[95vw] sm:max-w-4xl p-4 sm:p-6">
+              <DialogHeader>
+                <DialogTitle>Items Needed for Purchase</DialogTitle>
+              </DialogHeader>
+              {filteredNeededItems.length === 0 ? (
+                <div className="text-center py-8">
+                  <ShoppingCart className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-sm text-muted-foreground">No items need to be purchased at this time.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {filteredNeededItems.map((item) => (
+                    <div key={item.id} className="fv-card p-3 sm:p-4">
+                      <div className="flex flex-col sm:flex-row items-start justify-between gap-3 sm:gap-4">
+                        <div className="flex-1 w-full">
+                          <div className="flex flex-wrap items-center gap-2 mb-2">
+                            <h4 className="font-semibold text-foreground text-sm sm:text-base">{item.itemName}</h4>
+                            <span className={cn('fv-badge text-xs capitalize', getCategoryColor(item.category))}>
+                              {item.category}
+                            </span>
+                            <span className="fv-badge fv-badge--warning text-xs">
+                              {item.status}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 text-xs sm:text-sm text-muted-foreground">
+                            <div>
+                              <span className="font-medium">Quantity:</span> {item.quantity || 'N/A'} {item.unit}
+                            </div>
+                            {item.sourceChallengeTitle && (
+                              <div className="col-span-1 sm:col-span-2">
+                                <span className="font-medium">From Challenge:</span> <span className="break-words">{item.sourceChallengeTitle}</span>
+                              </div>
+                            )}
+                            <div>
+                              <span className="font-medium">Added:</span> {formatDate(item.createdAt)}
+                            </div>
+                          </div>
+                        </div>
                         <button
-                          type="button"
-                          onClick={() => {
-                            if (newCategoryName.trim()) {
-                              handleAddCategory(newCategoryName);
-                            } else {
-                              setShowNewCategoryInput(false);
-                            }
+                          onClick={async () => {
+                            // Mark as ordered or create inventory item
+                            // For now, just mark as ordered
+                            await updateDoc(doc(db, 'neededItems', item.id), {
+                              status: 'ordered',
+                              updatedAt: serverTimestamp(),
+                            });
+                            queryClient.invalidateQueries({ queryKey: ['neededItems'] });
                           }}
-                          className="fv-btn fv-btn--primary px-3"
+                          className="fv-btn fv-btn--primary shrink-0 w-full sm:w-auto"
                         >
-                          Add
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowNewCategoryInput(false);
-                            setNewCategoryName('');
-                          }}
-                          className="fv-btn fv-btn--secondary px-3"
-                        >
-                          Cancel
+                          Mark as Ordered
                         </button>
                       </div>
-                    )}
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium text-foreground">Unit</label>
-                    <input
-                      className="fv-input"
-                      value={unit}
-                      onChange={(e) => setUnit(e.target.value)}
-                    />
-                  </div>
+                    </div>
+                  ))}
                 </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-foreground">Supplier (optional)</label>
-                  <Select
-                    value={selectedSupplierId || '__none__'}
-                    onValueChange={(value) => setSelectedSupplierId(value === '__none__' ? '' : value)}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="No supplier" />
-                    </SelectTrigger>
-                    <SelectContent position="popper">
-                      <SelectItem value="__none__">No supplier</SelectItem>
-                      {suppliers.map((s) => (
-                        <SelectItem key={s.id} value={s.id}>
-                          {s.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium text-foreground">Quantity</label>
-                    <input
-                      type="number"
-                      min={0}
-                      className="fv-input"
-                      value={quantity}
-                      onChange={(e) => setQuantity(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium text-foreground">Unit Price (KES)</label>
-                    <input
-                      type="number"
-                      min={0}
-                      className="fv-input"
-                      value={pricePerUnit}
-                      onChange={(e) => setPricePerUnit(e.target.value)}
-                      required
-                    />
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    id="count-as-expense"
-                    type="checkbox"
-                    className="h-4 w-4"
-                    checked={countAsExpense}
-                    onChange={(e) => setCountAsExpense(e.target.checked)}
-                  />
-                  <label htmlFor="count-as-expense" className="text-sm text-foreground">
-                    Also create an expense for this purchase
-                  </label>
-                </div>
-                <DialogFooter>
-                  <button
-                    type="button"
-                    className="fv-btn fv-btn--secondary"
-                    onClick={() => setAddOpen(false)}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="fv-btn fv-btn--primary"
-                    onClick={(e) => {
-                      // Prevent any default close behavior
-                      e.stopPropagation();
-                    }}
-                  >
-                    {saving ? 'Saving…' : 'Save Item'}
-                  </button>
-                </DialogFooter>
-              </form>
-            )}
-          </DialogContent>
-        </Dialog>
+              )}
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       {/* Restock dialog */}
@@ -650,7 +757,7 @@ export default function InventoryPage() {
       </Dialog>
 
       {/* Summary Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 mb-6">
         <SimpleStatCard
           title="Total Items"
           value={inventory.length}
@@ -671,9 +778,46 @@ export default function InventoryPage() {
         />
         <SimpleStatCard
           title="Suppliers"
-          value={new Set(inventory.map(i => i.supplierId)).size}
+          value={new Set(inventory.map(i => i.supplierId).filter(Boolean)).size}
           layout="vertical"
         />
+      </div>
+
+      {/* Category Stats */}
+      <div className="mb-6">
+        <h3 className="text-lg font-semibold text-foreground mb-3">Items by Category</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
+          {availableCategories
+            .map((cat) => {
+              const categoryItems = filteredInventory.filter(
+                item => item.category.toLowerCase() === cat.toLowerCase()
+              );
+              if (categoryItems.length === 0) return null;
+              
+              return (
+                <div 
+                  key={cat} 
+                  className="fv-card p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => handleCategoryCardClick(cat)}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="text-3xl">
+                      {getCategoryIcon(cat)}
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                        {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                      </p>
+                      <p className="text-2xl font-bold text-foreground">
+                        {categoryItems.length}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+            .filter(Boolean)}
+        </div>
       </div>
 
       {/* Filters */}
@@ -801,6 +945,80 @@ export default function InventoryPage() {
           ))}
         </div>
       </div>
+
+      {/* Category Items Drawer */}
+      <Drawer open={categoryDrawerOpen} onOpenChange={setCategoryDrawerOpen}>
+        <DrawerContent className="max-h-[85vh]">
+          <DrawerHeader className="text-left">
+            <div className="flex items-center gap-3">
+              <div className="text-3xl">
+                {selectedCategory && getCategoryIcon(selectedCategory)}
+              </div>
+              <div>
+                <DrawerTitle className="text-xl">
+                  {selectedCategory && selectedCategory.charAt(0).toUpperCase() + selectedCategory.slice(1)} Items
+                </DrawerTitle>
+                <DrawerDescription>
+                  {categoryItemsList.length} {categoryItemsList.length === 1 ? 'item' : 'items'} in this category
+                </DrawerDescription>
+              </div>
+            </div>
+          </DrawerHeader>
+          <div className="px-4 pb-4 overflow-y-auto">
+            {categoryItemsList.length === 0 ? (
+              <div className="text-center py-8">
+                <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-sm text-muted-foreground">No items in this category.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {categoryItemsList.map((item) => (
+                  <div key={item.id} className="fv-card p-3 sm:p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-2">
+                          <h4 className="font-semibold text-foreground text-sm sm:text-base truncate">{item.name}</h4>
+                          {isLowStock(item) && (
+                            <span className="fv-badge fv-badge--warning text-xs shrink-0">
+                              <AlertTriangle className="h-3 w-3 mr-1" />
+                              Low
+                            </span>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs sm:text-sm text-muted-foreground">
+                          <div>
+                            <span className="font-medium">Quantity:</span> {item.quantity} {item.unit}
+                          </div>
+                          {item.pricePerUnit && (
+                            <div>
+                              <span className="font-medium">Price:</span> {formatCurrency(item.pricePerUnit)}/{item.unit}
+                            </div>
+                          )}
+                          <div>
+                            <span className="font-medium">Value:</span> {formatCurrency(item.quantity * (item.pricePerUnit || 0))}
+                          </div>
+                        </div>
+                        {item.supplierName && (
+                          <div className="text-xs text-muted-foreground mt-2">
+                            <span className="font-medium">Supplier:</span> {item.supplierName}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => handleOpenRestock(item)}
+                        className="fv-btn fv-btn--secondary shrink-0 p-2"
+                        title="Restock"
+                      >
+                        <Plus className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </DrawerContent>
+      </Drawer>
     </div>
   );
 }
