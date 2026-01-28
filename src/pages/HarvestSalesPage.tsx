@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import { db } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { useCollection } from '@/hooks/useCollection';
-import { Harvest, Sale } from '@/types';
+import { Harvest, Sale, Employee } from '@/types';
 import { SimpleStatCard } from '@/components/dashboard/SimpleStatCard';
 import { useQueryClient } from '@tanstack/react-query';
 import { formatDate } from '@/lib/dateUtils';
@@ -17,20 +17,38 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from '@/components/ui/select';
+
+const DEFAULT_MARKETS = ['Muthurwa Market', 'Githurai Market', 'Sagana Market'];
 
 export default function HarvestSalesPage() {
   const { activeProject } = useProject();
   const queryClient = useQueryClient();
   const { data: allHarvests = [], isLoading: loadingHarvests } = useCollection<Harvest>('harvests', 'harvests');
   const { data: allSales = [], isLoading: loadingSales } = useCollection<Sale>('sales', 'sales');
+  const { data: allEmployees = [] } = useCollection<Employee>('employees', 'employees');
 
   const harvests = activeProject
-    ? allHarvests.filter(h => h.projectId === activeProject.id)
+    ? allHarvests.filter((h) => h.projectId === activeProject.id)
     : allHarvests;
 
   const sales = activeProject
-    ? allSales.filter(s => s.projectId === activeProject.id)
+    ? allSales.filter((s) => s.projectId === activeProject.id)
     : allSales;
+
+  const brokers = activeProject
+    ? allEmployees.filter(
+        (e) => e.companyId === activeProject.companyId && e.role === 'sales-broker',
+      )
+    : allEmployees.filter((e) => e.role === 'sales-broker');
+
+  const marketHarvests = harvests.filter((h) => h.destination === 'market');
 
   const totalHarvest = harvests.reduce((sum, h) => sum + h.quantity, 0);
   const totalSales = sales.reduce((sum, s) => sum + s.totalAmount, 0);
@@ -50,6 +68,7 @@ export default function HarvestSalesPage() {
     const styles: Record<string, string> = {
       completed: 'fv-badge--active',
       pending: 'fv-badge--warning',
+      partial: 'fv-badge--warning',
       cancelled: 'bg-destructive/20 text-destructive',
     };
     return styles[status] || 'bg-muted text-muted-foreground';
@@ -61,16 +80,35 @@ export default function HarvestSalesPage() {
   const [harvestUnit, setHarvestUnit] = useState('kg');
   const [harvestQuality, setHarvestQuality] = useState<'A' | 'B' | 'C'>('A');
   const [harvestNotes, setHarvestNotes] = useState('');
+  const [harvestDestination, setHarvestDestination] = useState<'farm' | 'market'>('farm');
+  const [harvestFarmPricingMode, setHarvestFarmPricingMode] = useState<'perUnit' | 'total'>('perUnit');
+  const [harvestFarmUnitType, setHarvestFarmUnitType] = useState<'crate-big' | 'crate-small' | 'kg'>('kg');
+  const [harvestFarmUnitPrice, setHarvestFarmUnitPrice] = useState('');
+  const [harvestFarmTotalPrice, setHarvestFarmTotalPrice] = useState('');
+  const [harvestMarket, setHarvestMarket] = useState('');
+  const [harvestCustomMarket, setHarvestCustomMarket] = useState('');
+  const [harvestBrokerId, setHarvestBrokerId] = useState('');
   const [harvestSaving, setHarvestSaving] = useState(false);
 
   const [buyerName, setBuyerName] = useState('');
+  const [selectedHarvestId, setSelectedHarvestId] = useState('');
   const [saleQty, setSaleQty] = useState('');
   const [saleUnitPrice, setSaleUnitPrice] = useState('');
   const [saleTotal, setSaleTotal] = useState('');
   const [salePriceMode, setSalePriceMode] = useState<'perUnit' | 'total'>('perUnit');
   const [saleMode, setSaleMode] = useState<'crates' | 'kg'>('kg');
   const [crateSize, setCrateSize] = useState<'big' | 'small'>('big');
+  const [saleStatus, setSaleStatus] = useState<'pending' | 'partial' | 'completed' | 'cancelled'>('pending');
+  const [saleBrokerId, setSaleBrokerId] = useState('');
   const [saleSaving, setSaleSaving] = useState(false);
+  const [saleLines, setSaleLines] = useState<{ qty: string; unitPrice: string }[]>([
+    { qty: '', unitPrice: '' },
+  ]);
+
+  const [harvestFilter, setHarvestFilter] = useState<'all' | 'farm' | 'market'>('all');
+  const [saleStatusFilter, setSaleStatusFilter] = useState<
+    'all' | 'pending' | 'partial' | 'completed' | 'cancelled'
+  >('all');
 
   const parseNumber = (value: string) => Number(value || '0');
 
@@ -93,22 +131,102 @@ export default function HarvestSalesPage() {
     if (!activeProject) return;
     setHarvestSaving(true);
     try {
-      await addDoc(collection(db, 'harvests'), {
+      const destination = harvestDestination;
+
+      const harvestData: any = {
         quantity: Number(harvestQty || '0'),
         unit: harvestUnit,
         quality: harvestQuality,
-        notes: harvestNotes,
         projectId: activeProject.id,
         companyId: activeProject.companyId,
         cropType: activeProject.cropType,
+        destination,
         date: serverTimestamp(),
         createdAt: serverTimestamp(),
-      });
+      };
+
+      // Only include notes when there is actual text to save
+      if (harvestNotes && harvestNotes.trim().length > 0) {
+        harvestData.notes = harvestNotes.trim();
+      }
+
+      if (destination === 'farm') {
+        harvestData.farmPricingMode = harvestFarmPricingMode;
+        harvestData.farmPriceUnitType = harvestFarmUnitType;
+        const unitPriceNum = Number(harvestFarmUnitPrice || '0');
+        const totalPriceNum = Number(harvestFarmTotalPrice || '0');
+        if (unitPriceNum > 0) harvestData.farmUnitPrice = unitPriceNum;
+        if (totalPriceNum > 0) harvestData.farmTotalPrice = totalPriceNum;
+      } else if (destination === 'market') {
+        const rawMarket = harvestMarket === 'none' ? '' : harvestMarket;
+        const marketName = rawMarket === 'custom' ? harvestCustomMarket : rawMarket;
+        if (marketName) harvestData.marketName = marketName;
+        if (harvestBrokerId) {
+          const broker = brokers.find(b => b.id === harvestBrokerId);
+          harvestData.brokerId = harvestBrokerId;
+          harvestData.brokerName = broker?.name;
+        }
+      }
+
+      const harvestRef = await addDoc(collection(db, 'harvests'), harvestData);
+
+      // If this harvest is sold directly from the farm and has pricing,
+      // automatically create a completed sale linked to this harvest.
+      if (destination === 'farm') {
+        const qty = Number(harvestQty || '0');
+        const hasPerUnit = harvestData.farmUnitPrice && harvestData.farmUnitPrice > 0;
+        const hasTotal = harvestData.farmTotalPrice && harvestData.farmTotalPrice > 0;
+
+        if (qty > 0 && (hasPerUnit || hasTotal)) {
+          let unit = harvestFarmUnitType || harvestUnit || 'kg';
+          let totalAmount: number;
+          let unitPrice: number;
+
+          if (harvestFarmPricingMode === 'perUnit' && hasPerUnit) {
+            unitPrice = harvestData.farmUnitPrice;
+            totalAmount = unitPrice * qty;
+          } else if (hasTotal) {
+            totalAmount = harvestData.farmTotalPrice;
+            unitPrice = qty ? totalAmount / qty : 0;
+          } else {
+            totalAmount = 0;
+            unitPrice = 0;
+          }
+
+          if (totalAmount > 0) {
+            await addDoc(collection(db, 'sales'), {
+              harvestId: harvestRef.id,
+              buyerName: 'Farm gate sale',
+              quantity: qty,
+              unit,
+              unitPrice,
+              totalAmount,
+              status: 'completed',
+              projectId: activeProject.id,
+              companyId: activeProject.companyId,
+              cropType: activeProject.cropType,
+              date: serverTimestamp(),
+              createdAt: serverTimestamp(),
+            });
+
+            queryClient.invalidateQueries({ queryKey: ['sales'] });
+            queryClient.invalidateQueries({ queryKey: ['dashboard-sales'] });
+          }
+        }
+      }
       setHarvestOpen(false);
       setHarvestQty('');
       setHarvestUnit('kg');
       setHarvestQuality('A');
       setHarvestNotes('');
+      setHarvestDestination('farm');
+      setHarvestFarmPricingMode('perUnit');
+      setHarvestFarmUnitType('kg');
+      setHarvestFarmUnitPrice('');
+      setHarvestFarmTotalPrice('');
+      setHarvestMarket('');
+      setHarvestCustomMarket('');
+      setHarvestBrokerId('');
     } finally {
       setHarvestSaving(false);
     }
@@ -116,21 +234,9 @@ export default function HarvestSalesPage() {
 
   const handleAddSale = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeProject) return;
+    if (!activeProject || !selectedHarvestId) return;
     setSaleSaving(true);
     try {
-      const quantity = parseNumber(saleQty);
-      let unitPrice: number;
-      let totalAmount: number;
-
-      if (salePriceMode === 'perUnit') {
-        unitPrice = parseNumber(saleUnitPrice);
-        totalAmount = quantity * unitPrice;
-      } else {
-        totalAmount = parseNumber(saleTotal);
-        unitPrice = quantity ? totalAmount / quantity : 0;
-      }
-
       const isTomatoes = activeProject.cropType === 'tomatoes';
       const isFrenchBeans = activeProject.cropType === 'french-beans';
 
@@ -142,19 +248,68 @@ export default function HarvestSalesPage() {
         unit = 'kg';
       }
 
-      await addDoc(collection(db, 'sales'), {
+      let quantity: number;
+      let unitPrice: number;
+      let totalAmount: number;
+
+      // For tomato market sales by crates, support multiple price bands.
+      if (isTomatoes && saleMode === 'crates') {
+        const numericLines = saleLines
+          .map((line) => ({
+            q: parseNumber(line.qty),
+            p: parseNumber(line.unitPrice),
+          }))
+          .filter((l) => l.q > 0 && l.p > 0);
+
+        quantity = numericLines.reduce((sum, l) => sum + l.q, 0);
+        totalAmount = numericLines.reduce((sum, l) => sum + l.q * l.p, 0);
+        unitPrice = quantity ? totalAmount / quantity : 0;
+
+        if (!quantity || !totalAmount) {
+          alert('Please enter at least one price and quantity for the crates being sold.');
+          setSaleSaving(false);
+          return;
+        }
+      } else {
+        // Fallback to existing single price/quantity logic (kg or non-tomato crops)
+        quantity = parseNumber(saleQty);
+
+        if (salePriceMode === 'perUnit') {
+          unitPrice = parseNumber(saleUnitPrice);
+          totalAmount = quantity * unitPrice;
+        } else {
+          totalAmount = parseNumber(saleTotal);
+          unitPrice = quantity ? totalAmount / quantity : 0;
+        }
+
+        if (!quantity || !unitPrice || !totalAmount) {
+          alert('Please fill in quantity and price to record the sale.');
+          setSaleSaving(false);
+          return;
+        }
+      }
+
+      const saleData: any = {
+        harvestId: selectedHarvestId,
         buyerName,
         quantity,
         unit,
         unitPrice,
         totalAmount,
-        status: 'pending',
+        status: saleStatus,
         projectId: activeProject.id,
         companyId: activeProject.companyId,
         cropType: activeProject.cropType,
         date: serverTimestamp(),
         createdAt: serverTimestamp(),
-      });
+      };
+
+      // Only include brokerId if one was actually selected
+      if (saleBrokerId) {
+        saleData.brokerId = saleBrokerId;
+      }
+
+      await addDoc(collection(db, 'sales'), saleData);
       
       // Invalidate queries to refresh data immediately
       queryClient.invalidateQueries({ queryKey: ['sales'] });
@@ -162,12 +317,15 @@ export default function HarvestSalesPage() {
       
       setSaleOpen(false);
       setBuyerName('');
+      setSelectedHarvestId('');
       setSaleQty('');
       setSaleUnitPrice('');
       setSaleTotal('');
       setSalePriceMode('perUnit');
       setSaleMode('kg');
       setCrateSize('big');
+      setSaleStatus('pending');
+      setSaleBrokerId('');
     } finally {
       setSaleSaving(false);
     }
@@ -205,6 +363,38 @@ export default function HarvestSalesPage() {
                 </p>
               ) : (
                 <form onSubmit={handleRecordHarvest} className="space-y-4">
+                  {activeProject.cropType === 'tomatoes' && (
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-foreground">Destination</label>
+                      <div className="flex flex-wrap gap-2 text-xs sm:text-sm">
+                        <button
+                          type="button"
+                          className={cn(
+                            'px-3 py-1 rounded-full border',
+                            harvestDestination === 'farm'
+                              ? 'border-primary bg-primary/10 text-primary'
+                              : 'border-border text-muted-foreground'
+                          )}
+                          onClick={() => setHarvestDestination('farm')}
+                        >
+                          Sold from Farm
+                        </button>
+                        <button
+                          type="button"
+                          className={cn(
+                            'px-3 py-1 rounded-full border',
+                            harvestDestination === 'market'
+                              ? 'border-primary bg-primary/10 text-primary'
+                              : 'border-border text-muted-foreground'
+                          )}
+                          onClick={() => setHarvestDestination('market')}
+                        >
+                          Going to Market
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1">
                       <label className="text-sm font-medium text-foreground">Quantity</label>
@@ -228,18 +418,146 @@ export default function HarvestSalesPage() {
                   </div>
                   <div className="space-y-1">
                     <label className="text-sm font-medium text-foreground">Quality</label>
-                    <select
-                      className="fv-select w-full"
+                    <Select
                       value={harvestQuality}
-                      onChange={(e) =>
-                        setHarvestQuality(e.target.value as 'A' | 'B' | 'C')
+                      onValueChange={(val) =>
+                        setHarvestQuality(val as 'A' | 'B' | 'C')
                       }
                     >
-                      <option value="A">Grade A</option>
-                      <option value="B">Grade B</option>
-                      <option value="C">Grade C</option>
-                    </select>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select quality" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="A">Grade A</SelectItem>
+                        <SelectItem value="B">Grade B</SelectItem>
+                        <SelectItem value="C">Grade C</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
+
+                  {activeProject.cropType === 'tomatoes' && harvestDestination === 'farm' && (
+                    <div className="space-y-3 border rounded-lg p-3">
+                      <p className="text-xs text-muted-foreground font-medium">Farm Pricing</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-sm font-medium text-foreground">Unit Type</label>
+                          <Select
+                            value={harvestFarmUnitType}
+                            onValueChange={(val) =>
+                              setHarvestFarmUnitType(val as 'crate-big' | 'crate-small' | 'kg')
+                            }
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Select unit type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="kg">Kilograms (kg)</SelectItem>
+                              <SelectItem value="crate-big">Big crate</SelectItem>
+                              <SelectItem value="crate-small">Small crate</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-sm font-medium text-foreground">Pricing mode</label>
+                          <Select
+                            value={harvestFarmPricingMode}
+                            onValueChange={(val) =>
+                              setHarvestFarmPricingMode(val as 'perUnit' | 'total')
+                            }
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Select pricing mode" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="perUnit">Price per unit</SelectItem>
+                              <SelectItem value="total">Total amount</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1">
+                          {harvestFarmPricingMode === 'perUnit' ? (
+                            <>
+                              <label className="text-sm font-medium text-foreground">Price per unit (KES)</label>
+                              <input
+                                type="number"
+                                min={0}
+                                className="fv-input"
+                                value={harvestFarmUnitPrice}
+                                onChange={(e) => setHarvestFarmUnitPrice(e.target.value)}
+                              />
+                            </>
+                          ) : (
+                            <>
+                              <label className="text-sm font-medium text-foreground">Total amount (KES)</label>
+                              <input
+                                type="number"
+                                min={0}
+                                className="fv-input"
+                                value={harvestFarmTotalPrice}
+                                onChange={(e) => setHarvestFarmTotalPrice(e.target.value)}
+                              />
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {activeProject.cropType === 'tomatoes' && harvestDestination === 'market' && (
+                    <div className="space-y-3 border rounded-lg p-3">
+                      <p className="text-xs text-muted-foreground font-medium">Market & Broker</p>
+                      <div className="space-y-1">
+                        <label className="text-sm font-medium text-foreground">Market</label>
+                        <Select
+                          value={harvestMarket}
+                          onValueChange={setHarvestMarket}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select market" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {DEFAULT_MARKETS.map((market) => (
+                              <SelectItem key={market} value={market}>
+                                {market}
+                              </SelectItem>
+                            ))}
+                            <SelectItem value="custom">Custom market…</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {harvestMarket === 'custom' && (
+                        <div className="space-y-1">
+                          <label className="text-sm font-medium text-foreground">Custom market name</label>
+                          <input
+                            className="fv-input"
+                            value={harvestCustomMarket}
+                            onChange={(e) => setHarvestCustomMarket(e.target.value)}
+                            placeholder="Enter market name"
+                          />
+                        </div>
+                      )}
+                      <div className="space-y-1">
+                        <label className="text-sm font-medium text-foreground">Broker</label>
+                        <Select
+                          value={harvestBrokerId || 'none'}
+                          onValueChange={(val) => setHarvestBrokerId(val === 'none' ? '' : val)}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select broker" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">No broker</SelectItem>
+                            {brokers.map((broker) => (
+                              <SelectItem key={broker.id} value={broker.id}>
+                                {broker.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="space-y-1">
                     <label className="text-sm font-medium text-foreground">Notes</label>
                     <textarea
@@ -288,6 +606,30 @@ export default function HarvestSalesPage() {
               ) : (
                 <form onSubmit={handleAddSale} className="space-y-4">
                   <div className="space-y-1">
+                    <label className="text-sm font-medium text-foreground">Harvest (market-bound)</label>
+                    <Select
+                      value={selectedHarvestId}
+                      onValueChange={setSelectedHarvestId}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder={marketHarvests.length ? 'Select harvest going to market' : 'No market harvests available'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {marketHarvests.map((h) => (
+                          <SelectItem key={h.id} value={h.id}>
+                            {formatDate(h.date)} - {h.quantity.toLocaleString()} {h.unit} (Grade {h.quality})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {!marketHarvests.length && (
+                      <p className="text-xs text-muted-foreground">
+                        Record a harvest with destination set to &quot;Going to Market&quot; to enable market sales.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-1">
                     <label className="text-sm font-medium text-foreground">Buyer name</label>
                     <input
                       className="fv-input"
@@ -296,106 +638,192 @@ export default function HarvestSalesPage() {
                       required
                     />
                   </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-sm font-medium text-foreground">Sale status</label>
+                      <Select
+                        value={saleStatus}
+                        onValueChange={(val) =>
+                          setSaleStatus(val as 'pending' | 'partial' | 'completed' | 'cancelled')
+                        }
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="pending">Pending</SelectItem>
+                          <SelectItem value="partial">Partial</SelectItem>
+                          <SelectItem value="completed">Paid / Completed</SelectItem>
+                          <SelectItem value="cancelled">Cancelled</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-sm font-medium text-foreground">Broker (optional)</label>
+                      <Select
+                        value={saleBrokerId || 'none'}
+                        onValueChange={(val) => setSaleBrokerId(val === 'none' ? '' : val)}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select broker" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">No broker</SelectItem>
+                          {brokers.map((broker) => (
+                            <SelectItem key={broker.id} value={broker.id}>
+                              {broker.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
                   {activeProject.cropType === 'tomatoes' && (
                     <>
                       <div className="space-y-1">
                         <label className="text-sm font-medium text-foreground">Sale unit</label>
-                        <select
-                          className="fv-select w-full"
+                        <Select
                           value={saleMode}
-                          onChange={(e) => setSaleMode(e.target.value as 'crates' | 'kg')}
+                          onValueChange={(val) => {
+                            setSaleMode(val as 'crates' | 'kg');
+                            // Reset line/field state on unit change
+                            setSaleLines([{ qty: '', unitPrice: '' }]);
+                            setSaleQty('');
+                            setSaleUnitPrice('');
+                            setSaleTotal('');
+                          }}
                         >
-                          <option value="crates">Crates (big / small)</option>
-                          <option value="kg">Kilograms (kg)</option>
-                        </select>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select unit" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="crates">Crates (big / small)</SelectItem>
+                            <SelectItem value="kg">Kilograms (kg)</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
 
                       {saleMode === 'crates' && (
                         <>
                           <div className="space-y-1">
                             <label className="text-sm font-medium text-foreground">Crate size</label>
-                            <select
-                              className="fv-select w-full"
+                            <Select
                               value={crateSize}
-                              onChange={(e) => setCrateSize(e.target.value as 'big' | 'small')}
+                              onValueChange={(val) =>
+                                setCrateSize(val as 'big' | 'small')
+                              }
                             >
-                              <option value="big">Big crate</option>
-                              <option value="small">Small crate</option>
-                            </select>
+                              <SelectTrigger className="w-full">
+                                <SelectValue placeholder="Select crate size" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="big">Big crate</SelectItem>
+                                <SelectItem value="small">Small crate</SelectItem>
+                              </SelectContent>
+                            </Select>
                           </div>
-                          <div className="space-y-1">
-                            <label className="text-sm font-medium text-foreground">Pricing mode</label>
-                            <select
-                              className="fv-select w-full"
-                              value={salePriceMode}
-                              onChange={(e) => setSalePriceMode(e.target.value as 'perUnit' | 'total')}
-                            >
-                              <option value="perUnit">Price per crate</option>
-                              <option value="total">Total amount</option>
-                            </select>
-                          </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div className="space-y-1">
-                              <label className="text-sm font-medium text-foreground">Quantity (crates)</label>
-                              <input
-                                type="number"
-                                min={0}
-                                className="fv-input"
-                                value={saleQty}
-                                onChange={(e) => {
-                                  const value = e.target.value;
-                                  setSaleQty(value);
-                                  if (salePriceMode === 'perUnit') {
-                                    setSaleTotal(recomputeTotalFromPerUnit(value, saleUnitPrice));
-                                  } else {
-                                    setSaleUnitPrice(recomputeUnitFromTotal(value, saleTotal));
-                                  }
-                                }}
-                                required
-                              />
+
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <p className="text-sm font-medium text-foreground">
+                                Price bands (crates × price per crate)
+                              </p>
+                              <button
+                                type="button"
+                                className="fv-btn fv-btn--secondary text-xs py-1 px-2"
+                                onClick={() =>
+                                  setSaleLines([...saleLines, { qty: '', unitPrice: '' }])
+                                }
+                              >
+                                <Plus className="h-3 w-3" />
+                                Add price band
+                              </button>
                             </div>
-                            <div className="space-y-1">
-                              {salePriceMode === 'perUnit' ? (
-                                <>
-                                  <label className="text-sm font-medium text-foreground">Price per crate (KES)</label>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    className="fv-input"
-                                    value={saleUnitPrice}
-                                    onChange={(e) => {
-                                      const value = e.target.value;
-                                      setSaleUnitPrice(value);
-                                      setSaleTotal(recomputeTotalFromPerUnit(saleQty, value));
-                                    }}
-                                    required
-                                  />
-                                </>
-                              ) : (
-                                <>
-                                  <label className="text-sm font-medium text-foreground">Total amount (KES)</label>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    className="fv-input"
-                                    value={saleTotal}
-                                    onChange={(e) => {
-                                      const value = e.target.value;
-                                      setSaleTotal(value);
-                                      setSaleUnitPrice(recomputeUnitFromTotal(saleQty, value));
-                                    }}
-                                    required
-                                  />
-                                </>
-                              )}
+                            <div className="space-y-2">
+                              {saleLines.map((line, idx) => (
+                                <div
+                                  key={idx}
+                                  className="grid grid-cols-1 sm:grid-cols-7 gap-2 items-end"
+                                >
+                                  <div className="sm:col-span-3 space-y-1">
+                                    <label className="text-xs text-muted-foreground">
+                                      Number of crates
+                                    </label>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      className="fv-input"
+                                      value={line.qty}
+                                      onChange={(e) => {
+                                        const next = [...saleLines];
+                                        next[idx] = { ...next[idx], qty: e.target.value };
+                                        setSaleLines(next);
+                                      }}
+                                      placeholder="e.g. 50"
+                                    />
+                                  </div>
+                                  <div className="sm:col-span-3 space-y-1">
+                                    <label className="text-xs text-muted-foreground">
+                                      Price per crate (KES)
+                                    </label>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      className="fv-input"
+                                      value={line.unitPrice}
+                                      onChange={(e) => {
+                                        const next = [...saleLines];
+                                        next[idx] = { ...next[idx], unitPrice: e.target.value };
+                                        setSaleLines(next);
+                                      }}
+                                      placeholder="e.g. 1200"
+                                    />
+                                  </div>
+                                  <div className="sm:col-span-1">
+                                    <button
+                                      type="button"
+                                      className="fv-btn fv-btn--secondary w-full text-xs py-2"
+                                      onClick={() => {
+                                        if (saleLines.length === 1) {
+                                          setSaleLines([{ qty: '', unitPrice: '' }]);
+                                        } else {
+                                          setSaleLines(saleLines.filter((_, i) => i !== idx));
+                                        }
+                                      }}
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {(() => {
+                                const numericLines = saleLines
+                                  .map((line) => ({
+                                    q: parseNumber(line.qty),
+                                    p: parseNumber(line.unitPrice),
+                                  }))
+                                  .filter((l) => l.q > 0 && l.p > 0);
+                                const totalCrates = numericLines.reduce(
+                                  (sum, l) => sum + l.q,
+                                  0,
+                                );
+                                const totalValue = numericLines.reduce(
+                                  (sum, l) => sum + l.q * l.p,
+                                  0,
+                                );
+                                if (!totalCrates || !totalValue) {
+                                  return 'Enter at least one quantity and price to see totals.';
+                                }
+                                const avgPrice = totalValue / totalCrates;
+                                return `Total: ${totalCrates.toLocaleString()} crates • ${formatCurrency(
+                                  totalValue,
+                                )} (avg ~ KES ${avgPrice.toFixed(2)} per crate)`;
+                              })()}
                             </div>
                           </div>
-                          <p className="text-xs text-muted-foreground">
-                            Total: {saleTotal ? formatCurrency(parseNumber(saleTotal)) : 'KES 0'}{' '}
-                            {saleQty && saleUnitPrice && (
-                              <>({saleQty} crates @ KES {Number(saleUnitPrice || '0').toLocaleString()} each)</>
-                            )}
-                          </p>
                         </>
                       )}
 
@@ -403,14 +831,20 @@ export default function HarvestSalesPage() {
                         <>
                           <div className="space-y-1">
                             <label className="text-sm font-medium text-foreground">Pricing mode</label>
-                            <select
-                              className="fv-select w-full"
+                            <Select
                               value={salePriceMode}
-                              onChange={(e) => setSalePriceMode(e.target.value as 'perUnit' | 'total')}
+                              onValueChange={(val) =>
+                                setSalePriceMode(val as 'perUnit' | 'total')
+                              }
                             >
-                              <option value="perUnit">Price per kg</option>
-                              <option value="total">Total amount</option>
-                            </select>
+                              <SelectTrigger className="w-full">
+                                <SelectValue placeholder="Select pricing mode" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="perUnit">Price per kg</SelectItem>
+                                <SelectItem value="total">Total amount</SelectItem>
+                              </SelectContent>
+                            </Select>
                           </div>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div className="space-y-1">
@@ -480,14 +914,20 @@ export default function HarvestSalesPage() {
                     <>
                       <div className="space-y-1">
                         <label className="text-sm font-medium text-foreground">Pricing mode</label>
-                        <select
-                          className="fv-select w-full"
+                        <Select
                           value={salePriceMode}
-                          onChange={(e) => setSalePriceMode(e.target.value as 'perUnit' | 'total')}
+                          onValueChange={(val) =>
+                            setSalePriceMode(val as 'perUnit' | 'total')
+                          }
                         >
-                          <option value="perUnit">Price per kg</option>
-                          <option value="total">Total amount</option>
-                        </select>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select pricing mode" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="perUnit">Price per kg</SelectItem>
+                            <SelectItem value="total">Total amount</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div className="space-y-1">
@@ -632,12 +1072,38 @@ export default function HarvestSalesPage() {
 
       {/* Harvests Section */}
       <div className="fv-card">
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
           <h3 className="text-lg font-semibold">Harvest Records</h3>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Filter by destination</span>
+            <Select
+              value={harvestFilter}
+              onValueChange={(val) =>
+                setHarvestFilter(val as 'all' | 'farm' | 'market')
+              }
+            >
+              <SelectTrigger className="w-36">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="farm">Farm</SelectItem>
+                <SelectItem value="market">Market</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         {loadingHarvests && (
           <p className="text-sm text-muted-foreground mb-4">Loading harvests…</p>
+        )}
+
+        {loadingHarvests && (
+          <p className="text-sm text-muted-foreground mb-4">Loading harvests…</p>
+        )}
+
+        {harvests.length === 0 && !loadingHarvests && (
+          <p className="text-sm text-muted-foreground">No harvests recorded yet.</p>
         )}
 
         <div className="hidden md:block overflow-x-auto">
@@ -647,12 +1113,19 @@ export default function HarvestSalesPage() {
                 <th>Date</th>
                 <th>Quantity</th>
                 <th>Quality</th>
+                <th>Destination</th>
                 <th>Notes</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {harvests.map((harvest) => (
+              {harvests
+                .filter((harvest) => {
+                  if (harvestFilter === 'all') return true;
+                  const dest = harvest.destination || 'farm';
+                  return dest === harvestFilter;
+                })
+                .map((harvest) => (
                 <tr key={harvest.id}>
                   <td>
                     {formatDate(harvest.date)}
@@ -662,6 +1135,23 @@ export default function HarvestSalesPage() {
                     <span className={cn('fv-badge', getQualityBadge(harvest.quality))}>
                       Grade {harvest.quality}
                     </span>
+                  </td>
+                  <td>
+                    {harvest.destination === 'market' ? (
+                      <div className="space-y-0.5 text-xs">
+                        <span className="fv-badge fv-badge--gold capitalize">
+                          Market
+                        </span>
+                        <div className="text-muted-foreground">
+                          {harvest.marketName || 'Market not set'}
+                          {harvest.brokerName && (
+                            <> • Broker: {harvest.brokerName}</>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Farm</span>
+                    )}
                   </td>
                   <td className="text-muted-foreground">{harvest.notes || '-'}</td>
                   <td>
@@ -676,7 +1166,13 @@ export default function HarvestSalesPage() {
         </div>
 
         <div className="md:hidden space-y-3">
-          {harvests.map((harvest) => (
+          {harvests
+            .filter((harvest) => {
+              if (harvestFilter === 'all') return true;
+              const dest = harvest.destination || 'farm';
+              return dest === harvestFilter;
+            })
+            .map((harvest) => (
             <div key={harvest.id} className="p-4 bg-muted/30 rounded-lg">
               <div className="flex items-center justify-between mb-2">
                 <span className="font-medium">{harvest.quantity.toLocaleString()} {harvest.unit}</span>
@@ -687,6 +1183,13 @@ export default function HarvestSalesPage() {
               <p className="text-sm text-muted-foreground">
                 {formatDate(harvest.date, { month: 'long' })}
               </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {harvest.destination === 'market'
+                  ? `Market: ${harvest.marketName || 'Not set'}${
+                      harvest.brokerName ? ` • Broker: ${harvest.brokerName}` : ''
+                    }`
+                  : 'Destination: Farm'}
+              </p>
             </div>
           ))}
         </div>
@@ -694,8 +1197,28 @@ export default function HarvestSalesPage() {
 
       {/* Sales Section */}
       <div className="fv-card">
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
           <h3 className="text-lg font-semibold">Sales Records</h3>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Filter by status</span>
+            <Select
+              value={saleStatusFilter}
+              onValueChange={(val) =>
+                setSaleStatusFilter(val as 'all' | 'pending' | 'partial' | 'completed' | 'cancelled')
+              }
+            >
+              <SelectTrigger className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="partial">Partial</SelectItem>
+                <SelectItem value="completed">Completed</SelectItem>
+                <SelectItem value="cancelled">Cancelled</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         {loadingSales && (
@@ -711,11 +1234,20 @@ export default function HarvestSalesPage() {
                 <th>Unit Price</th>
                 <th>Total</th>
                 <th>Status</th>
+                <th>Broker</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {sales.map((sale) => (
+              {sales
+                .filter((sale) =>
+                  saleStatusFilter === 'all' ? true : sale.status === saleStatusFilter,
+                )
+                .map((sale) => {
+                  const broker = sale.brokerId
+                    ? allEmployees.find((e) => e.id === sale.brokerId)
+                    : null;
+                  return (
                 <tr key={sale.id}>
                   <td className="font-medium text-foreground">{sale.buyerName}</td>
                   <td>
@@ -733,19 +1265,30 @@ export default function HarvestSalesPage() {
                       {sale.status}
                     </span>
                   </td>
+                  <td className="text-sm text-muted-foreground">
+                    {broker ? broker.name : '—'}
+                  </td>
                   <td>
                     <button className="p-2 hover:bg-muted rounded-lg transition-colors">
                       <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
                     </button>
                   </td>
                 </tr>
-              ))}
+              );})}
             </tbody>
           </table>
         </div>
 
         <div className="md:hidden space-y-3">
-          {sales.map((sale) => (
+          {sales
+            .filter((sale) =>
+              saleStatusFilter === 'all' ? true : sale.status === saleStatusFilter,
+            )
+            .map((sale) => {
+              const broker = sale.brokerId
+                ? allEmployees.find((e) => e.id === sale.brokerId)
+                : null;
+              return (
             <div key={sale.id} className="p-4 bg-muted/30 rounded-lg">
               <div className="flex items-center justify-between mb-2">
                 <span className="font-medium text-foreground">{sale.buyerName}</span>
@@ -761,8 +1304,11 @@ export default function HarvestSalesPage() {
                 </span>
                 <span className="font-semibold">{formatCurrency(sale.totalAmount)}</span>
               </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {broker ? `Broker: ${broker.name}` : 'No broker set'}
+              </p>
             </div>
-          ))}
+          );})}
         </div>
       </div>
     </div>

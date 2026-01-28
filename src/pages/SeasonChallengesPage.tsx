@@ -393,16 +393,16 @@ export default function SeasonChallengesPage() {
                   <label className="text-sm font-medium text-foreground">Challenge Type</label>
                   <Select value={challengeType} onValueChange={(value) => setChallengeType(value as ChallengeType)}>
                     <SelectTrigger>
-                      <SelectValue />
+                      <SelectValue placeholder="Select challenge type" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="weather">Weather</SelectItem>
                       <SelectItem value="pests">Pests</SelectItem>
                       <SelectItem value="diseases">Diseases</SelectItem>
                       <SelectItem value="prices">Prices</SelectItem>
-                      <SelectItem value="labor">Labor</SelectItem>
+                      <SelectItem value="labor">Labour / People</SelectItem>
                       <SelectItem value="equipment">Equipment</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
+                      <SelectItem value="other">Custom (not listed)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -650,16 +650,16 @@ export default function SeasonChallengesPage() {
                   <label className="text-sm font-medium text-foreground">Challenge Type</label>
                   <Select value={editChallengeType} onValueChange={(value) => setEditChallengeType(value as ChallengeType)}>
                     <SelectTrigger>
-                      <SelectValue />
+                      <SelectValue placeholder="Select challenge type" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="weather">Weather</SelectItem>
                       <SelectItem value="pests">Pests</SelectItem>
                       <SelectItem value="diseases">Diseases</SelectItem>
                       <SelectItem value="prices">Prices</SelectItem>
-                      <SelectItem value="labor">Labor</SelectItem>
+                      <SelectItem value="labor">Labour / People</SelectItem>
                       <SelectItem value="equipment">Equipment</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
+                      <SelectItem value="other">Custom (not listed)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

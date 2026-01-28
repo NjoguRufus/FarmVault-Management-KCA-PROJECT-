@@ -346,7 +346,7 @@ export default function ExpensesPage() {
                         <SelectItem value="fertilizer">Fertilizer</SelectItem>
                         <SelectItem value="chemical">Chemical</SelectItem>
                         <SelectItem value="fuel">Fuel</SelectItem>
-                        <SelectItem value="other">Other</SelectItem>
+                        <SelectItem value="other">Custom / Not listed</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

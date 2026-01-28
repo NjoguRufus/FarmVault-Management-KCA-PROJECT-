@@ -57,20 +57,50 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
   const location = useLocation();
   const { user } = useAuth();
 
-  const baseNavItems = user?.role === 'developer' ? developerNavItems : companyNavItems;
-  
-  // Filter nav items based on user role
-  const navItems = baseNavItems.filter(item => {
-    // Show employee-only items only for employees
-    if ((item as any).employeeOnly) {
-      return user?.role === 'employee';
-    }
-    // Hide employee dashboard for non-employees
-    if (item.href === '/employee-dashboard' && user?.role !== 'employee') {
-      return false;
-    }
-    return true;
-  });
+  const employeeRole = (user as any)?.employeeRole as string | undefined;
+
+  let navItems = companyNavItems;
+
+  if (!user) {
+    // While auth is still loading, show full company nav to avoid a blank sidebar.
+    navItems = companyNavItems;
+  } else if (user.role === 'developer') {
+    // Developers: full admin nav
+    navItems = developerNavItems;
+  } else if (user.role === 'company-admin' || user.role === ('company_admin' as any)) {
+    // Company admin: full company nav including dashboard (hide legacy employee dashboard)
+    navItems = companyNavItems.filter((item) => item.href !== '/employee-dashboard');
+  } else if (
+    user.role === 'manager' ||
+    employeeRole === 'manager' ||
+    employeeRole === 'operations-manager'
+  ) {
+    // Manager: manager operations + inventory
+    navItems = [
+      { title: 'Manager Operations', href: '/manager/operations', icon: Wrench },
+      { title: 'Inventory', href: '/inventory', icon: Package },
+    ];
+  } else if (
+    user.role === 'broker' ||
+    employeeRole === 'sales-broker' ||
+    employeeRole === 'broker'
+  ) {
+    // Broker: own dashboard + harvest & sales + expenses
+    navItems = [
+      { title: 'Broker Dashboard', href: '/broker', icon: LayoutDashboard },
+      { title: 'Harvest & Sales', href: '/harvest-sales', icon: TrendingUp },
+      { title: 'Expenses', href: '/expenses', icon: Receipt },
+    ];
+  } else if (
+    (user.role === 'employee' || user.role === ('user' as any)) &&
+    (employeeRole === 'logistics-driver' || employeeRole === 'driver')
+  ) {
+    // Driver: own dashboard only
+    navItems = [{ title: 'Driver Dashboard', href: '/driver', icon: Truck }];
+  } else {
+    // Fallback: minimal company nav
+    navItems = companyNavItems.filter((item) => item.href === '/dashboard');
+  }
 
   return (
     <>

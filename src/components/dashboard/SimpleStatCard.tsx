@@ -9,7 +9,7 @@ export interface SimpleStatCardProps {
   iconVariant?: "success" | "warning" | "info" | "destructive" | "primary" | "muted" | "gold";
   subtitle?: string;
   className?: string;
-  layout?: "horizontal" | "vertical";
+  layout?: "horizontal" | "vertical" | "mobile-compact";
   valueVariant?: "default" | "success" | "warning" | "destructive";
   responsive?: boolean; // NEW – aligns with LuxuryStatCard
 }
@@ -35,6 +35,16 @@ export function SimpleStatCard({
     muted: "bg-muted/60 text-muted-foreground",
   };
 
+  const iconColorClasses = {
+    success: "text-fv-success",
+    warning: "text-fv-warning",
+    info: "text-fv-info",
+    destructive: "text-destructive",
+    primary: "text-primary",
+    gold: "text-fv-olive",
+    muted: "text-muted-foreground",
+  };
+
   const valueColorClasses = {
     default: "text-foreground",
     success: "text-fv-success",
@@ -50,6 +60,47 @@ export function SimpleStatCard({
   // Decorative bottom accent (subtle, not loud)
   const accent =
     "after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-gradient-to-r after:from-primary/60 after:via-primary/20 after:to-transparent";
+
+  if (layout === "mobile-compact") {
+    return (
+      <div className={cn(cardBase, padding, accent, className)}>
+        <div className="flex items-center gap-1.5 mb-2">
+          {Icon && (
+            <Icon className={cn(
+              "shrink-0",
+              responsive ? "h-3 w-3 sm:h-4 sm:w-4" : "h-3 w-3",
+              iconColorClasses[iconVariant]
+            )} />
+          )}
+          <p className={cn(
+            "font-semibold uppercase tracking-wide text-muted-foreground",
+            responsive ? "text-[9px] sm:text-[10px]" : "text-[9px]"
+          )}>
+            {title}
+          </p>
+        </div>
+
+        <p
+          className={cn(
+            "font-heading font-bold tracking-tight",
+            responsive ? "text-base sm:text-lg" : "text-base",
+            valueColorClasses[valueVariant]
+          )}
+        >
+          {value}
+        </p>
+
+        {subtitle && (
+          <p className={cn(
+            "mt-0.5 text-muted-foreground",
+            responsive ? "text-[9px] sm:text-[10px]" : "text-[9px]"
+          )}>
+            {subtitle}
+          </p>
+        )}
+      </div>
+    );
+  }
 
   if (layout === "vertical") {
     return (

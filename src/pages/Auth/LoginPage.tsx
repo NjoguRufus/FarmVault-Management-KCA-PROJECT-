@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
 
 export default function LoginPage() {
-  const { login, isAuthenticated } = useAuth();
+  const { login, isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation() as any;
   const from = location.state?.from?.pathname || '/dashboard';
@@ -17,11 +17,50 @@ export default function LoginPage() {
 
   // Redirect when authenticated (handles both initial load and after login)
   useEffect(() => {
-    if (isAuthenticated) {
-      setLoading(false);
-      navigate(from, { replace: true });
+    if (!isAuthenticated || !user) return;
+
+    setLoading(false);
+
+    // Role-based default landing route after login
+    const employeeRole = (user as any).employeeRole as string | undefined;
+
+    // Company admin → company dashboard
+    if (user.role === 'company-admin' || user.role === ('company_admin' as any)) {
+      navigate('/dashboard', { replace: true });
+      return;
     }
-  }, [isAuthenticated, navigate, from]);
+
+    // Developer → admin area
+    if (user.role === 'developer') {
+      navigate('/admin', { replace: true });
+      return;
+    }
+
+    // Manager (platform role or employeeRole) → manager dashboard
+    if (
+      user.role === 'manager' ||
+      employeeRole === 'manager' ||
+      employeeRole === 'operations-manager'
+    ) {
+      navigate('/manager', { replace: true });
+      return;
+    }
+
+    // Broker → broker dashboard
+    if (user.role === 'broker' || employeeRole === 'sales-broker' || employeeRole === 'broker') {
+      navigate('/broker', { replace: true });
+      return;
+    }
+
+    // Driver → driver dashboard
+    if (employeeRole === 'logistics-driver' || employeeRole === 'driver') {
+      navigate('/driver', { replace: true });
+      return;
+    }
+
+    // Fallback: previously intended route or projects list
+    navigate(from || '/projects', { replace: true });
+  }, [isAuthenticated, user, navigate, from]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import { db } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
 import { useCollection } from '@/hooks/useCollection';
-import { WorkLog, Employee, CropStage, InventoryItem, InventoryCategory, InventoryCategoryItem, User } from '@/types';
+import { WorkLog, Employee, CropStage, InventoryItem, InventoryCategory, InventoryCategoryItem, User, Expense, ExpenseCategory } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { getCurrentStageForProject } from '@/services/stageService';
 import { syncTodaysLabourExpenses } from '@/services/workLogService';
@@ -83,10 +83,11 @@ export default function OperationsPage() {
   const getPaidIcon = (paid?: boolean) =>
     paid ? <CheckCircle className="h-5 w-5 text-fv-success" /> : <Clock className="h-5 w-5 text-fv-warning" />;
 
-  const getAssigneeName = (employeeId?: string) => {
-    if (!employeeId) return 'Unassigned';
-    const employee = allEmployees.find(e => e.id === employeeId);
-    return employee?.name || 'Unknown';
+  const getAssigneeName = (id?: string) => {
+    if (!id) return 'Unassigned';
+    const employee = allEmployees.find(e => e.id === id);
+    const userMatch = allUsers.find(u => u.id === id);
+    return employee?.name || userMatch?.name || 'Unknown';
   };
 
   const getAssignedEmployeeName = (log: WorkLog) => {
@@ -106,6 +107,7 @@ export default function OperationsPage() {
     return today;
   });
   const [workCategory, setWorkCategory] = useState('');
+  const [workType, setWorkType] = useState('');
   const [numberOfPeople, setNumberOfPeople] = useState('');
   const [ratePerPerson, setRatePerPerson] = useState('');
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
@@ -332,6 +334,7 @@ export default function OperationsPage() {
         stageName: selectedStage.stageName,
         date,
         workCategory,
+        workType: workType || undefined,
         numberOfPeople: numPeople,
         ratePerPerson: rate,
         totalPrice: calculatedTotal > 0 ? calculatedTotal : undefined,
@@ -410,6 +413,7 @@ export default function OperationsPage() {
 
       // Clear form but keep modal open for multiple entries
       setWorkCategory('');
+      setWorkType('');
       setNumberOfPeople('');
       setRatePerPerson('');
       setSelectedEmployeeIds([]);
@@ -455,6 +459,7 @@ export default function OperationsPage() {
         stageName: selectedStage.stageName,
         date,
         workCategory,
+        workType: workType || undefined,
         numberOfPeople: numPeople,
         ratePerPerson: rate,
         totalPrice: calculatedTotal > 0 ? calculatedTotal : undefined,
@@ -527,6 +532,22 @@ export default function OperationsPage() {
     if (!user || !log.id) return;
     setMarkingPaid(true);
     try {
+      // Use manager submitted values if approved, otherwise use original values
+      const finalNumberOfPeople = log.managerSubmissionStatus === 'approved' && log.managerSubmittedNumberOfPeople !== undefined
+        ? log.managerSubmittedNumberOfPeople
+        : log.numberOfPeople;
+      
+      const finalRatePerPerson = log.managerSubmissionStatus === 'approved' && log.managerSubmittedRatePerPerson !== undefined
+        ? log.managerSubmittedRatePerPerson
+        : log.ratePerPerson;
+      
+      const finalTotalPrice = log.managerSubmissionStatus === 'approved' && log.managerSubmittedTotalPrice !== undefined
+        ? log.managerSubmittedTotalPrice
+        : log.totalPrice;
+
+      const amount = finalTotalPrice || (finalNumberOfPeople * (finalRatePerPerson || 0));
+
+      // Update work log
       const logRef = doc(db, 'workLogs', log.id);
       await updateDoc(logRef, {
         paid: true,
@@ -534,13 +555,99 @@ export default function OperationsPage() {
         paidBy: user.id,
         paidByName: user.name,
       });
+
+      // Create expense entry if there's an amount
+      if (amount > 0) {
+        const logDate = toDate(log.date) || new Date();
+        const expenseRef = doc(collection(db, 'expenses'));
+        const expense: Omit<Expense, 'id'> = {
+          companyId: log.companyId,
+          projectId: log.projectId,
+          cropType: log.cropType,
+          category: 'labour' as ExpenseCategory,
+          description: `Labour - ${log.workCategory} on ${logDate.toLocaleDateString()}`,
+          amount,
+          date: logDate,
+          stageIndex: log.stageIndex,
+          stageName: log.stageName,
+          syncedFromWorkLogId: log.id,
+          synced: true,
+          paid: true,
+          paidAt: new Date(),
+          paidBy: user.id,
+          paidByName: user.name,
+          createdAt: new Date(),
+        };
+
+        await addDoc(collection(db, 'expenses'), {
+          ...expense,
+          date: expense.date,
+          createdAt: serverTimestamp(),
+          paidAt: serverTimestamp(),
+        });
+      }
+
       queryClient.invalidateQueries({ queryKey: ['workLogs'] });
       queryClient.invalidateQueries({ queryKey: ['expenses'] });
       if (selectedLog?.id === log.id) {
         setSelectedLog({ ...selectedLog, paid: true });
       }
+    } catch (error) {
+      console.error('Failed to mark as paid:', error);
     } finally {
       setMarkingPaid(false);
+    }
+  };
+
+  const handleApproveManagerSubmission = async (log: WorkLog) => {
+    if (!user || !log.id) return;
+    const logRef = doc(db, 'workLogs', log.id);
+    // When approving, copy manager-submitted numeric fields into the main fields
+    const update: any = {
+      managerSubmissionStatus: 'approved' as const,
+      approvedBy: user.id,
+      approvedByName: user.name,
+    };
+    if (log.managerSubmittedNumberOfPeople !== undefined) {
+      update.numberOfPeople = log.managerSubmittedNumberOfPeople;
+    }
+    if (log.managerSubmittedRatePerPerson !== undefined) {
+      update.ratePerPerson = log.managerSubmittedRatePerPerson;
+    }
+    if (log.managerSubmittedTotalPrice !== undefined) {
+      update.totalPrice = log.managerSubmittedTotalPrice;
+    }
+    try {
+      await updateDoc(logRef, update);
+      queryClient.invalidateQueries({ queryKey: ['workLogs'] });
+      if (selectedLog?.id === log.id) {
+        setSelectedLog({ ...selectedLog, ...update });
+      }
+    } catch (error) {
+      console.error('Failed to approve manager submission:', error);
+    }
+  };
+
+  const handleRejectManagerSubmission = async (log: WorkLog) => {
+    if (!user || !log.id) return;
+    const logRef = doc(db, 'workLogs', log.id);
+    try {
+      await updateDoc(logRef, {
+        managerSubmissionStatus: 'rejected',
+        approvedBy: user.id,
+        approvedByName: user.name,
+      });
+      queryClient.invalidateQueries({ queryKey: ['workLogs'] });
+      if (selectedLog?.id === log.id) {
+        setSelectedLog({
+          ...selectedLog,
+          managerSubmissionStatus: 'rejected',
+          approvedBy: user.id,
+          approvedByName: user.name,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to reject manager submission:', error);
     }
   };
 
@@ -692,13 +799,38 @@ export default function OperationsPage() {
                   </div>
                   <div className="space-y-1">
                     <label className="text-sm font-medium text-foreground">Work type</label>
-                    <input
-                      className="fv-input"
-                      value={workCategory}
-                      onChange={(e) => setWorkCategory(e.target.value)}
-                      required
-                      placeholder="Spraying, Fertilizer application, Watering..."
-                    />
+                    <div className="flex gap-2">
+                      <div className="w-1/2">
+                        <Select
+                          value={workType}
+                          onValueChange={(val) => setWorkType(val)}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select work type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Spraying">Spraying</SelectItem>
+                            <SelectItem value="Fertilizer application">
+                              Fertilizer application
+                            </SelectItem>
+                            <SelectItem value="Watering">Watering</SelectItem>
+                            <SelectItem value="Weeding">Weeding</SelectItem>
+                            <SelectItem value="Add new work type">
+                              Add new work type
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="w-1/2">
+                        <input
+                          className="fv-input"
+                          value={workCategory}
+                          onChange={(e) => setWorkCategory(e.target.value)}
+                          required
+                          placeholder="Type or refine work name"
+                        />
+                      </div>
+                    </div>
                   </div>
                   <div className="space-y-1">
                     <label className="text-sm font-medium text-foreground">Number of people</label>
@@ -912,16 +1044,18 @@ export default function OperationsPage() {
         </div>
       </div>
 
-      {/* Work Logs List */}
-      <div className="space-y-4">
+      {/* Work Logs */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {isLoading && (
-          <p className="text-sm text-muted-foreground">Loading work logs…</p>
+          <div className="col-span-full fv-card p-8 text-center">
+            <p className="text-sm text-muted-foreground">Loading work logs…</p>
+          </div>
         )}
         {workLogs.map((log) => (
           <div
             key={log.id}
             className={cn(
-              "fv-card relative flex items-start gap-4 p-4 cursor-pointer overflow-hidden",
+              "fv-card relative flex items-start gap-4 p-4 cursor-pointer overflow-hidden hover:shadow-md transition-shadow",
               log.paid && "after:content-['PAID'] after:absolute after:top-1/2 after:left-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:text-7xl after:font-bold after:text-red-500/15 after:rotate-[-35deg] after:pointer-events-none after:select-none after:z-0"
             )}
             onClick={() => handleViewLog(log)}
@@ -938,6 +1072,18 @@ export default function OperationsPage() {
                         {log.paid ? 'Paid' : 'Unpaid'}
                       </span>
                     </div>
+                    {log.adminName && (
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        Planned by admin: {log.adminName}
+                      </p>
+                    )}
+                    {log.managerSubmittedAt && (
+                      <p className="text-[11px] text-fv-info mt-0.5">
+                        Manager {log.managerName || getAssigneeName(log.managerId)} submitted values
+                        {log.managerSubmissionStatus &&
+                          ` • ${String(log.managerSubmissionStatus).toUpperCase()}`}
+                      </p>
+                    )}
                     <p className="text-sm text-muted-foreground mt-1">
                       {log.numberOfPeople} people
                       {log.ratePerPerson ? ` @ KES ${log.ratePerPerson.toLocaleString()}` : ''}
@@ -979,12 +1125,46 @@ export default function OperationsPage() {
                   <span>•</span>
                   <span>Manager: {getAssigneeName(log.managerId)}</span>
                 </div>
+                {log.managerSubmittedNumberOfPeople && (
+                  <div className="mt-2 p-2 rounded-md bg-muted/40 border border-dashed border-muted-foreground/30 text-[11px] text-muted-foreground space-y-1">
+                    <p className="font-semibold text-foreground text-xs">
+                      Manager submission ({log.managerSubmissionStatus?.toUpperCase() || 'PENDING'})
+                    </p>
+                    <p>
+                      People:{' '}
+                      <span className="font-medium text-foreground">
+                        {log.managerSubmittedNumberOfPeople}
+                      </span>
+                      {log.managerSubmittedRatePerPerson && (
+                        <>
+                          {' '}@ KES{' '}
+                          <span className="font-medium text-foreground">
+                            {log.managerSubmittedRatePerPerson.toLocaleString()}
+                          </span>
+                        </>
+                      )}
+                    </p>
+                    {log.managerSubmittedTotalPrice && (
+                      <p>
+                        Total:{' '}
+                        <span className="font-semibold text-foreground">
+                          KES {log.managerSubmittedTotalPrice.toLocaleString()}
+                        </span>
+                      </p>
+                    )}
+                    {log.managerSubmittedInputsUsed && (
+                      <p className="line-clamp-2">
+                        Inputs: <span className="font-medium text-foreground">{log.managerSubmittedInputsUsed}</span>
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           ))}
 
-        {workLogs.length === 0 && (
-          <div className="fv-card text-center py-12">
+        {workLogs.length === 0 && !isLoading && (
+          <div className="col-span-full fv-card text-center py-12">
             <Wrench className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
             <h3 className="text-lg font-medium text-foreground mb-2">No Work Logged</h3>
             <p className="text-sm text-muted-foreground">
@@ -1002,11 +1182,64 @@ export default function OperationsPage() {
           </DialogHeader>
           {selectedLog && (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Work Category</p>
+              {/* Summary + match status */}
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Work Category</p>
                   <p className="font-medium">{selectedLog.workCategory}</p>
+                  {selectedLog.workType && (
+                    <p className="text-xs text-muted-foreground">
+                      Work Type: {selectedLog.workType}
+                    </p>
+                  )}
                 </div>
+                {selectedLog.managerSubmittedNumberOfPeople && (
+                  <div className="text-right text-xs">
+                    <p className="text-muted-foreground mb-1">Manager Submission</p>
+                    {(() => {
+                      const mismatches: string[] = [];
+                      if (
+                        selectedLog.managerSubmittedNumberOfPeople !==
+                        selectedLog.numberOfPeople
+                      ) {
+                        mismatches.push('people');
+                      }
+                      if (
+                        selectedLog.managerSubmittedRatePerPerson &&
+                        selectedLog.ratePerPerson &&
+                        selectedLog.managerSubmittedRatePerPerson !==
+                          selectedLog.ratePerPerson
+                      ) {
+                        mismatches.push('rate');
+                      }
+                      if (
+                        selectedLog.managerSubmittedTotalPrice &&
+                        selectedLog.totalPrice &&
+                        selectedLog.managerSubmittedTotalPrice !== selectedLog.totalPrice
+                      ) {
+                        mismatches.push('total');
+                      }
+                      const hasMismatch = mismatches.length > 0;
+                      return (
+                        <span
+                          className={cn(
+                            'inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium',
+                            hasMismatch
+                              ? 'bg-destructive/10 text-destructive'
+                              : 'bg-emerald-100 text-emerald-800',
+                          )}
+                        >
+                          {hasMismatch
+                            ? `Mismatches: ${mismatches.join(', ')}`
+                            : 'Manager values match yours'}
+                        </span>
+                      );
+                    })()}
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Date</p>
                   <p className="font-medium">
@@ -1026,12 +1259,39 @@ export default function OperationsPage() {
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Number of People</p>
                   <p className="font-medium">{selectedLog.numberOfPeople}</p>
+                  {selectedLog.managerSubmittedNumberOfPeople !== undefined && (
+                    <p
+                      className={cn(
+                        'text-[11px] mt-0.5',
+                        selectedLog.managerSubmittedNumberOfPeople ===
+                          selectedLog.numberOfPeople
+                          ? 'text-emerald-700'
+                          : 'text-destructive',
+                      )}
+                    >
+                      Manager: {selectedLog.managerSubmittedNumberOfPeople}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Rate per Person</p>
                   <p className="font-medium">
                     {selectedLog.ratePerPerson ? `KES ${selectedLog.ratePerPerson.toLocaleString()}` : 'N/A'}
                   </p>
+                  {selectedLog.managerSubmittedRatePerPerson !== undefined && (
+                    <p
+                      className={cn(
+                        'text-[11px] mt-0.5',
+                        selectedLog.managerSubmittedRatePerPerson ===
+                          selectedLog.ratePerPerson
+                          ? 'text-emerald-700'
+                          : 'text-destructive',
+                      )}
+                    >
+                      Manager:{' '}
+                      {`KES ${selectedLog.managerSubmittedRatePerPerson.toLocaleString()}`}
+                    </p>
+                  )}
                 </div>
                 {selectedLog.totalPrice && (
                   <div className="col-span-2">
@@ -1042,6 +1302,20 @@ export default function OperationsPage() {
                     <p className="text-xs text-muted-foreground mt-1">
                       {selectedLog.numberOfPeople} people × KES {selectedLog.ratePerPerson?.toLocaleString() || '0'} = KES {selectedLog.totalPrice.toLocaleString()}
                     </p>
+                    {selectedLog.managerSubmittedTotalPrice && (
+                      <p
+                        className={cn(
+                          'text-[11px] mt-1',
+                          selectedLog.managerSubmittedTotalPrice ===
+                            selectedLog.totalPrice
+                            ? 'text-emerald-700'
+                            : 'text-destructive',
+                        )}
+                      >
+                        Manager total: KES{' '}
+                        {selectedLog.managerSubmittedTotalPrice.toLocaleString()}
+                      </p>
+                    )}
                   </div>
                 )}
                 {((selectedLog as any).employeeIds || selectedLog.employeeId) && (
@@ -1073,6 +1347,22 @@ export default function OperationsPage() {
                   <p className="text-sm bg-muted/50 p-3 rounded-lg">{selectedLog.notes}</p>
                 </div>
               )}
+              {selectedLog.managerSubmittedNotes && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Manager Notes</p>
+                  <p className="text-sm bg-muted/30 p-3 rounded-lg whitespace-pre-wrap">
+                    {selectedLog.managerSubmittedNotes}
+                  </p>
+                </div>
+              )}
+              {selectedLog.managerSubmittedInputsUsed && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Manager Inputs Used</p>
+                  <p className="text-sm bg-muted/30 p-3 rounded-lg whitespace-pre-wrap">
+                    {selectedLog.managerSubmittedInputsUsed}
+                  </p>
+                </div>
+              )}
               {(selectedLog as any).changeReason && (
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Reason for Change</p>
@@ -1080,9 +1370,28 @@ export default function OperationsPage() {
                 </div>
               )}
               {!selectedLog.paid && (
-                <div className="flex justify-end gap-2 pt-4 border-t">
-                  <button
-                    onClick={() => {
+                <div className="flex justify-between items-center gap-2 pt-4 border-t">
+                  <div className="flex gap-2">
+                    {selectedLog.managerSubmittedNumberOfPeople && (
+                      <>
+                        <button
+                          onClick={() => handleApproveManagerSubmission(selectedLog)}
+                          className="fv-btn fv-btn--primary"
+                        >
+                          Approve Manager Submission
+                        </button>
+                        <button
+                          onClick={() => handleRejectManagerSubmission(selectedLog)}
+                          className="fv-btn fv-btn--secondary"
+                        >
+                          Reject
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
                       setEditLog(selectedLog);
                       setPreviousWorkData({
                         workCategory: selectedLog.workCategory,
@@ -1119,17 +1428,18 @@ export default function OperationsPage() {
                       setViewOpen(false);
                       setEditOpen(true);
                     }}
-                    className="fv-btn fv-btn--secondary"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleMarkAsPaid(selectedLog)}
-                    disabled={markingPaid}
-                    className="fv-btn fv-btn--primary"
-                  >
-                    {markingPaid ? 'Marking...' : 'Mark as Paid'}
-                  </button>
+                      className="fv-btn fv-btn--secondary"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleMarkAsPaid(selectedLog)}
+                      disabled={markingPaid}
+                      className="fv-btn fv-btn--primary"
+                    >
+                      {markingPaid ? 'Marking...' : 'Mark as Paid'}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

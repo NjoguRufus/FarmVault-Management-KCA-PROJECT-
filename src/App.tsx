@@ -9,7 +9,6 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import { CompanyDashboard } from "@/pages/dashboard/CompanyDashboard";
 import { DeveloperDashboard } from "@/pages/dashboard/DeveloperDashboard";
 import { EmployeeDashboard } from "@/pages/dashboard/EmployeeDashboard";
-import { ManagerDashboard } from "@/pages/dashboard/ManagerDashboard";
 import { BrokerDashboard } from "@/pages/dashboard/BrokerDashboard";
 import { DriverDashboard } from "@/pages/dashboard/DriverDashboard";
 import ProjectsPage from "@/pages/ProjectsPage";
@@ -42,8 +41,64 @@ import AdminCompaniesPage from "@/pages/admin/AdminCompaniesPage";
 import AdminUsersPage from "@/pages/admin/AdminUsersPage";
 import AdminPendingUsersPage from "@/pages/admin/AdminPendingUsersPage";
 import AdminAuditLogsPage from "@/pages/admin/AdminAuditLogsPage";
+import ManagerOperationsPage from "@/pages/ManagerOperationsPage";
+import { useAuth } from "@/contexts/AuthContext";
 
 const queryClient = new QueryClient();
+
+// Route-level wrapper that ensures only company-admin users can access the
+// main company dashboard at /dashboard. Everyone else is redirected to
+// their role-specific dashboard or a relevant page.
+const CompanyDashboardRoute = () => {
+  const { user } = useAuth();
+
+  // Fallback: if somehow not authenticated here, send to login
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (user.role === "company-admin" || user.role === "company_admin") {
+    return <CompanyDashboard />;
+  }
+
+  // Developers should use the admin area, not the company dashboard.
+  if (user.role === "developer") {
+    return <Navigate to="/admin" replace />;
+  }
+
+  // Managers go to manager dashboard
+  if (
+    user.role === "manager" ||
+    (user as any).employeeRole === "manager" ||
+    (user as any).employeeRole === "operations-manager"
+  ) {
+    return <Navigate to="/manager" replace />;
+  }
+
+  // Brokers go to broker dashboard
+  if (user.role === "broker") {
+    return <Navigate to="/broker" replace />;
+  }
+
+  // Generic employees: route based on fine-grained employeeRole when available
+  if (user.role === "employee" || user.role === ("user" as any)) {
+    const employeeRole = (user as any).employeeRole as string | undefined;
+    if (employeeRole === "logistics-driver" || employeeRole === "driver") {
+      return <Navigate to="/driver" replace />;
+    }
+    if (employeeRole === "operations-manager" || employeeRole === "manager") {
+      return <Navigate to="/manager" replace />;
+    }
+    if (employeeRole === "sales-broker" || employeeRole === "broker") {
+      return <Navigate to="/broker" replace />;
+    }
+    // Default employee landing: projects list
+    return <Navigate to="/projects" replace />;
+  }
+
+  // Catch-all: send to projects list
+  return <Navigate to="/projects" replace />;
+};
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -68,7 +123,7 @@ const App = () => (
                   </RequireAuth>
                 }
               >
-                <Route path="/dashboard" element={<CompanyDashboard />} />
+                <Route path="/dashboard" element={<CompanyDashboardRoute />} />
                 <Route path="/projects" element={<ProjectsPage />} />
                 <Route path="/projects/new" element={<NewProjectPage />} />
                 <Route path="/projects/:projectId" element={<ProjectDetailsPage />} />
@@ -95,7 +150,8 @@ const App = () => (
                   </RequireManager>
                 }
               >
-                <Route path="/manager" element={<ManagerDashboard />} />
+                <Route path="/manager" element={<Navigate to="/manager/operations" replace />} />
+                <Route path="/manager/operations" element={<ManagerOperationsPage />} />
               </Route>
 
               <Route

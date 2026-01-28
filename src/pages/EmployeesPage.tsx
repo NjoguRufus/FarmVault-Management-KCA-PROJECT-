@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { Plus, Search, MoreHorizontal, Phone } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { db } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db, auth } from '@/lib/firebase';
+import { collection, addDoc, serverTimestamp, doc, setDoc } from 'firebase/firestore';
+import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { useCollection } from '@/hooks/useCollection';
 import { Employee } from '@/types';
 import { SimpleStatCard } from '@/components/dashboard/SimpleStatCard';
@@ -44,6 +45,8 @@ export default function EmployeesPage() {
   );
   const [department, setDepartment] = useState('Operations');
   const [contact, setContact] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [saving, setSaving] = useState(false);
   const { data: employees = [], isLoading } = useCollection<Employee>('employees', 'employees');
 
@@ -65,7 +68,11 @@ export default function EmployeesPage() {
     try {
       const roleConfig = ROLE_OPTIONS.find(r => r.value === role)!;
       const companyId = user?.companyId || 'company-1';
+      // Create auth user for the employee
+      const credential = await createUserWithEmailAndPassword(auth, email, password);
+      const uid = credential.user.uid;
 
+      // Core employee record (for HR/operations views)
       await addDoc(collection(db, 'employees'), {
         name,
         role,
@@ -74,6 +81,28 @@ export default function EmployeesPage() {
         status: 'active',
         companyId,
         joinDate: serverTimestamp(),
+        createdAt: serverTimestamp(),
+        authUserId: uid,
+      });
+
+      // Map employee role to top-level app role for routing/guards
+      // - operations-manager -> manager dashboard
+      // - sales-broker      -> broker dashboard
+      // - logistics-driver  -> employee (checked separately for driver dashboard)
+      const appRole =
+        role === 'operations-manager'
+          ? 'manager'
+          : role === 'sales-broker'
+          ? 'broker'
+          : 'employee';
+
+      // User profile used for login + role-based dashboards
+      await setDoc(doc(db, 'users', uid), {
+        email,
+        name,
+        role: appRole,
+        employeeRole: role,
+        companyId,
         createdAt: serverTimestamp(),
       });
       
@@ -85,6 +114,8 @@ export default function EmployeesPage() {
       setRole('operations-manager');
       setDepartment('Operations');
       setContact('');
+      setEmail('');
+      setPassword('');
     } finally {
       setSaving(false);
     }
@@ -160,6 +191,33 @@ export default function EmployeesPage() {
               </Select>
                 </div>
               {/* Department is derived from role; no manual input */}
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-foreground">Email (for login)</label>
+                <input
+                  type="email"
+                  className="fv-input"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="employee@farmvault.com"
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-foreground">
+                  Initial password
+                  <span className="block text-xs text-muted-foreground">
+                    Set a password for this employee to use when logging in. It won&apos;t be visible after saving, so share it securely now.
+                  </span>
+                </label>
+                <input
+                  type="password"
+                  className="fv-input"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  minLength={6}
+                  required
+                />
               </div>
               <div className="space-y-1">
                 <label className="text-sm font-medium text-foreground">Contact</label>

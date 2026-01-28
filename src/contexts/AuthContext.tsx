@@ -36,6 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: data.email || firebaseUser.email || '',
         name: data.name || 'User',
         role: data.role || 'employee',
+        employeeRole: data.employeeRole,
         companyId: data.companyId ?? null,
         avatar: data.avatar,
         createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(),

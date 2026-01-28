@@ -21,7 +21,7 @@ service cloud.firestore {
         && request.resource.data.companyId == userCompanyId();
     }
 
-    // For reads/updates/deletes: ensure the existing doc's companyId matches the user's companyId.
+    // For updates/deletes: ensure the existing doc's companyId matches the user's companyId.
     function matchesCompanyOnDoc() {
       return isSignedIn()
         && resource.data.companyId == userCompanyId();
@@ -30,11 +30,10 @@ service cloud.firestore {
     // --- Users ---
 
     match /users/{userId} {
-      // Users can read their own profile.
-      allow read: if isSignedIn() && userId == request.auth.uid;
-
-      // Lock down writes here for now; you can relax this as needed.
-      allow write: if false;
+      // For now, allow any signed-in user to read/write user documents.
+      // This keeps the app functional while we iterate on role-based security.
+      // Tighten these rules later using custom auth claims if needed.
+      allow read, write: if isSignedIn();
     }
 
     // --- Companies ---
@@ -47,99 +46,114 @@ service cloud.firestore {
     // --- Projects ---
 
     match /projects/{projectId} {
-      allow read, update, delete: if matchesCompanyOnDoc();
+      // Allow any signed-in user to read projects; restrict modifications by company.
+      allow read: if isSignedIn();
+      allow update, delete: if matchesCompanyOnDoc();
       allow create: if matchesCompanyOnCreate();
     }
 
     // --- Project Stages ---
 
     match /projectStages/{stageId} {
-      allow read, update, delete: if matchesCompanyOnDoc();
+      allow read: if isSignedIn();
+      allow update, delete: if matchesCompanyOnDoc();
       allow create: if matchesCompanyOnCreate();
     }
 
     // --- Work Logs ---
 
     match /workLogs/{workLogId} {
-      allow read, update, delete: if matchesCompanyOnDoc();
+      allow read: if isSignedIn();
+      allow update, delete: if matchesCompanyOnDoc();
       allow create: if matchesCompanyOnCreate();
     }
 
     // --- Expenses ---
 
     match /expenses/{expenseId} {
-      allow read, update, delete: if matchesCompanyOnDoc();
+      allow read: if isSignedIn();
+      allow update, delete: if matchesCompanyOnDoc();
       allow create: if matchesCompanyOnCreate();
     }
 
     // --- Season Challenges ---
 
     match /seasonChallenges/{challengeId} {
-      allow read, update, delete: if matchesCompanyOnDoc();
+      allow read: if isSignedIn();
+      allow update, delete: if matchesCompanyOnDoc();
       allow create: if matchesCompanyOnCreate();
     }
 
     // --- Inventory Usage ---
 
     match /inventoryUsage/{usageId} {
-      allow read, update, delete: if matchesCompanyOnDoc();
+      allow read: if isSignedIn();
+      allow update, delete: if matchesCompanyOnDoc();
       allow create: if matchesCompanyOnCreate();
     }
 
     // --- Inventory Items ---
 
     match /inventoryItems/{itemId} {
-      allow read, update, delete: if matchesCompanyOnDoc();
+      allow read: if isSignedIn();
+      allow update, delete: if matchesCompanyOnDoc();
       allow create: if matchesCompanyOnCreate();
     }
 
     // --- Inventory Categories ---
 
     match /inventoryCategories/{categoryId} {
-      allow read, update, delete: if matchesCompanyOnDoc();
+      allow read: if isSignedIn();
+      allow update, delete: if matchesCompanyOnDoc();
       allow create: if matchesCompanyOnCreate();
     }
 
     // --- Inventory Purchases ---
 
     match /inventoryPurchases/{purchaseId} {
-      allow read, update, delete: if matchesCompanyOnDoc();
+      allow read: if isSignedIn();
+      allow update, delete: if matchesCompanyOnDoc();
       allow create: if matchesCompanyOnCreate();
     }
 
     // --- Harvests ---
 
     match /harvests/{harvestId} {
-      allow read, update, delete: if matchesCompanyOnDoc();
+      allow read: if isSignedIn();
+      allow update, delete: if matchesCompanyOnDoc();
       allow create: if matchesCompanyOnCreate();
     }
 
     // --- Sales ---
 
     match /sales/{saleId} {
-      allow read, update, delete: if matchesCompanyOnDoc();
+      allow read: if isSignedIn();
+      allow update, delete: if matchesCompanyOnDoc();
       allow create: if matchesCompanyOnCreate();
     }
 
     // --- Suppliers ---
 
     match /suppliers/{supplierId} {
-      allow read, update, delete: if matchesCompanyOnDoc();
+      allow read: if isSignedIn();
+      allow update, delete: if matchesCompanyOnDoc();
       allow create: if matchesCompanyOnCreate();
     }
 
     // --- Employees ---
 
     match /employees/{employeeId} {
-      allow read, update, delete: if matchesCompanyOnDoc();
+      allow read: if isSignedIn();
+      allow update, delete: if matchesCompanyOnDoc();
       allow create: if matchesCompanyOnCreate();
     }
 
     // --- Feedback ---
 
     match /feedback/{feedbackId} {
-      // Feedback is linked to a company; enforce same-company access.
-      allow read, update, delete: if matchesCompanyOnDoc();
+      // Feedback is linked to a company; enforce same-company access for writes.
+      allow read: if isSignedIn();
+      allow update, delete: if matchesCompanyOnDoc();
       allow create: if matchesCompanyOnCreate();
     }
 

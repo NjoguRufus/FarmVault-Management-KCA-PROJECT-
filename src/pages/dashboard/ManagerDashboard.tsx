@@ -130,7 +130,7 @@ export function ManagerDashboard() {
   const workLogsByCategory = useMemo(() => {
     const grouped: Record<string, WorkLog[]> = {};
     todayWorkLogs.forEach(log => {
-      const category = log.workCategory || 'Other';
+      const category = log.workCategory || 'Uncategorized work';
       if (!grouped[category]) grouped[category] = [];
       grouped[category].push(log);
     });

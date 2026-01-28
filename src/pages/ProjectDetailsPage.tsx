@@ -171,7 +171,7 @@ export default function ProjectDetailsPage() {
   );
 
   const workLogsByCategory = workLogs.reduce<Record<string, number>>((acc, w) => {
-    const key = w.workCategory || 'Other';
+    const key = w.workCategory || 'Uncategorized work';
     acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {});

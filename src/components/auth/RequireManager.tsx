@@ -14,7 +14,11 @@ export function RequireManager({ children }: RequireManagerProps) {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
-  if (user?.role !== 'manager') {
+  const isManagerPlatformRole = user?.role === 'manager';
+  const isManagerEmployeeRole =
+    user?.employeeRole === 'manager' || user?.employeeRole === 'operations-manager';
+
+  if (!isManagerPlatformRole && !isManagerEmployeeRole) {
     return <Navigate to="/dashboard" replace />;
   }
 

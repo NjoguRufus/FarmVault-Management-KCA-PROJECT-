@@ -9,6 +9,8 @@ export interface User {
   email: string;
   name: string;
   role: UserRole;
+  // Optional fine-grained employee role, e.g. 'operations-manager', 'sales-broker', 'logistics-driver'
+  employeeRole?: string;
   companyId: string | null;
   avatar?: string;
   createdAt: Date;
@@ -175,6 +177,8 @@ export interface WorkLog {
 
   date: Date;
   workCategory: string;
+  // Optional high-level work type, e.g. Spraying, Fertilizer application, etc.
+  workType?: string;
 
   numberOfPeople: number;
   ratePerPerson?: number;
@@ -204,6 +208,8 @@ export interface WorkLog {
   };
 
   notes?: string;
+  // Free-text description of inputs used (spraying, fertilizer application, etc.)
+  inputsUsed?: string;
   changeReason?: string; // Reason for changing work mid-way
 
   managerId?: string;
@@ -213,6 +219,20 @@ export interface WorkLog {
   paid?: boolean;
   paidAt?: Date;
   paidBy?: string;
+  // Admin/manager coordination metadata
+  origin?: 'admin' | 'manager'; // Legacy: who created this log (new flow keeps a single log)
+  parentWorkLogId?: string; // Legacy: for older manager logs that used a child document
+  managerSubmissionStatus?: 'pending' | 'approved' | 'rejected';
+  managerSubmittedAt?: Date;
+  // Manager-submitted values for confirmation (do NOT change admin's original plan fields)
+  managerSubmittedNumberOfPeople?: number;
+  managerSubmittedRatePerPerson?: number;
+  managerSubmittedTotalPrice?: number;
+  managerSubmittedNotes?: string;
+  managerSubmittedInputsUsed?: string;
+  managerSubmittedWorkType?: string;
+  approvedBy?: string;
+  approvedByName?: string;
 
   createdAt: Date;
 }
@@ -267,6 +287,21 @@ export interface Harvest {
   unit: string;
   quality: 'A' | 'B' | 'C';
   notes?: string;
+
+  // Destination of this harvest: sold directly from farm or sent to market
+  destination?: 'farm' | 'market';
+
+  // Farm-side pricing metadata (optional)
+  farmPricingMode?: 'perUnit' | 'total';
+  // Unit used for farm pricing: crate types or kg
+  farmPriceUnitType?: 'crate-big' | 'crate-small' | 'kg';
+  farmUnitPrice?: number;
+  farmTotalPrice?: number;
+
+  // Market-side metadata
+  marketName?: string;
+  brokerId?: string;
+  brokerName?: string;
 }
 
 export interface Sale {
@@ -282,7 +317,7 @@ export interface Sale {
   unitPrice: number;
   totalAmount: number;
   date: Date;
-  status: 'pending' | 'completed' | 'cancelled';
+  status: 'pending' | 'partial' | 'completed' | 'cancelled';
   brokerId?: string; // ID of the broker who made the sale
 }
 
