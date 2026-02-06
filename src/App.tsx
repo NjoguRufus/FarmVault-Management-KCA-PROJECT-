@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProjectProvider } from "@/contexts/ProjectContext";
+import { NotificationProvider } from "@/contexts/NotificationContext";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { CompanyDashboard } from "@/pages/dashboard/CompanyDashboard";
 import { DeveloperDashboard } from "@/pages/dashboard/DeveloperDashboard";
@@ -30,6 +31,7 @@ import EmployeesPage from "@/pages/EmployeesPage";
 import ReportsPage from "@/pages/ReportsPage";
 import BillingPage from "@/pages/BillingPage";
 import SupportPage from "@/pages/SupportPage";
+import SettingsPage from "@/pages/SettingsPage";
 import FeedbackPage from "@/pages/FeedbackPage";
 import NotFound from "./pages/NotFound";
 import Index from "@/pages/Index";
@@ -46,6 +48,11 @@ import AdminCompaniesPage from "@/pages/admin/AdminCompaniesPage";
 import AdminUsersPage from "@/pages/admin/AdminUsersPage";
 import AdminPendingUsersPage from "@/pages/admin/AdminPendingUsersPage";
 import AdminAuditLogsPage from "@/pages/admin/AdminAuditLogsPage";
+import AdminBackupsPage from "@/pages/admin/AdminBackupsPage";
+import AdminCodeRedPage from "@/pages/admin/AdminCodeRedPage";
+import AdminFeedbackPage from "@/pages/admin/AdminFeedbackPage";
+import AdminFinancesPage from "@/pages/admin/AdminFinancesPage";
+import AdminExpensesPage from "@/pages/admin/AdminExpensesPage";
 import ManagerOperationsPage from "@/pages/ManagerOperationsPage";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -109,6 +116,7 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
       <ProjectProvider>
+        <NotificationProvider>
         <TooltipProvider>
           <Toaster />
           <Sonner />
@@ -144,6 +152,7 @@ const App = () => (
                 <Route path="/employees" element={<EmployeesPage />} />
                 <Route path="/reports" element={<ReportsPage />} />
                 <Route path="/billing" element={<BillingPage />} />
+                <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/support" element={<SupportPage />} />
                 <Route path="/feedback" element={<FeedbackPage />} />
               </Route>
@@ -199,11 +208,17 @@ const App = () => (
                 <Route path="/admin/users" element={<AdminUsersPage />} />
                 <Route path="/admin/users/pending" element={<AdminPendingUsersPage />} />
                 <Route path="/admin/audit-logs" element={<AdminAuditLogsPage />} />
+                <Route path="/admin/backups" element={<AdminBackupsPage />} />
+                <Route path="/admin/code-red" element={<AdminCodeRedPage />} />
+                <Route path="/admin/feedback" element={<AdminFeedbackPage />} />
+                <Route path="/admin/finances" element={<AdminFinancesPage />} />
+                <Route path="/admin/expenses" element={<AdminExpensesPage />} />
               </Route>
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>
         </TooltipProvider>
+        </NotificationProvider>
       </ProjectProvider>
     </AuthProvider>
   </QueryClientProvider>

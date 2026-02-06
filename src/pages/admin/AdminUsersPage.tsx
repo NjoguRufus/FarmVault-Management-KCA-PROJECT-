@@ -2,11 +2,15 @@ import React from 'react';
 import { Users } from 'lucide-react';
 import { useCollection } from '@/hooks/useCollection';
 import { User } from '@/types';
+import { Company } from '@/types';
 
 export default function AdminUsersPage() {
   const { data: users = [], isLoading } = useCollection<User>('admin-users-list', 'users');
+  const { data: companies = [] } = useCollection<Company>('admin-users-companies', 'companies');
 
   const nonDevelopers = users.filter(u => u.role !== 'developer');
+  const getCompanyName = (companyId: string | null) =>
+    companyId ? (companies.find((c) => c.id === companyId)?.name ?? companyId) : 'Unassigned';
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -41,7 +45,7 @@ export default function AdminUsersPage() {
                 <tr key={u.id}>
                   <td>{u.email}</td>
                   <td className="capitalize">{u.role}</td>
-                  <td>{u.companyId || 'Unassigned'}</td>
+                  <td>{getCompanyName(u.companyId ?? null)}</td>
                   <td>{u.createdAt?.toLocaleDateString?.() || '-'}</td>
                 </tr>
               ))}

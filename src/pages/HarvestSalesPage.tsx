@@ -25,6 +25,12 @@ import {
   SelectContent,
   SelectItem,
 } from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 const DEFAULT_MARKETS = ['Muthurwa Market', 'Githurai Market', 'Sagana Market'];
 
@@ -1371,13 +1377,24 @@ export default function HarvestSalesPage() {
                         </td>
                         <td className="text-muted-foreground">{harvest.notes || '-'}</td>
                         <td onClick={(e) => e.stopPropagation()}>
-                          <button
-                            type="button"
-                            className="p-2 hover:bg-muted rounded-lg transition-colors"
-                            onClick={() => navigate(`/harvest-sales/harvest/${harvest.id}`)}
-                          >
-                            <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
-                          </button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                type="button"
+                                className="p-2 hover:bg-muted rounded-lg transition-colors"
+                              >
+                                <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                className="cursor-pointer"
+                                onClick={() => navigate(`/harvest-sales/harvest/${harvest.id}`)}
+                              >
+                                View details
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </td>
                       </tr>
                     );
@@ -1524,9 +1541,30 @@ export default function HarvestSalesPage() {
                     {brokerName ?? '—'}
                   </td>
                   <td>
-                    <button className="p-2 hover:bg-muted rounded-lg transition-colors">
-                      <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
-                    </button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          className="p-2 hover:bg-muted rounded-lg transition-colors"
+                        >
+                          <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        {sale.harvestId ? (
+                          <DropdownMenuItem
+                            className="cursor-pointer"
+                            onClick={() => navigate(`/harvest-sales/harvest/${sale.harvestId}`)}
+                          >
+                            View harvest details
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem className="cursor-pointer" disabled>
+                            No harvest linked
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </td>
                 </tr>
               );})}

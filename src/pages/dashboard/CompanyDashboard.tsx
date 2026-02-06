@@ -11,6 +11,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useCollection } from '@/hooks/useCollection';
 import { Company, Expense, Harvest, Project, Sale } from '@/types';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { toDate } from '@/lib/dateUtils';
 
 export function CompanyDashboard() {
   const { activeProject } = useProject();
@@ -94,6 +95,14 @@ export function CompanyDashboard() {
     return filtered;
   }, [allStages, companyId, activeProject, projectFilter]);
 
+  // Always show crop stages for the currently selected project in the widget
+  const activeProjectStages = React.useMemo(() => {
+    if (!activeProject) return [];
+    return allStages.filter(
+      (s) => s.companyId === companyId && s.projectId === activeProject.id,
+    );
+  }, [allStages, companyId, activeProject]);
+
   const totalExpenses = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
   const totalHarvest = filteredHarvests.reduce((sum, h) => sum + h.quantity, 0);
   const totalSales = filteredSales.reduce((sum, s) => sum + s.totalAmount, 0);
@@ -116,6 +125,32 @@ export function CompanyDashboard() {
         }, {}),
       ).map(([category, amount]) => ({ category, amount }))
     : [];
+
+  // Build activity data for bar chart: last 6 months, expenses + sales per month
+  const activityChartData = React.useMemo(() => {
+    const months: { month: string; expenses: number; sales: number }[] = [];
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthKey = d.toLocaleDateString('en-KE', { month: 'short', year: 'numeric' });
+      const monthStart = new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+      const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59).getTime();
+      const expenses = filteredExpenses
+        .filter((e) => {
+          const t = toDate(e.date)?.getTime();
+          return t != null && t >= monthStart && t <= monthEnd;
+        })
+        .reduce((sum, e) => sum + e.amount, 0);
+      const sales = filteredSales
+        .filter((s) => {
+          const t = toDate(s.date)?.getTime();
+          return t != null && t >= monthStart && t <= monthEnd;
+        })
+        .reduce((sum, s) => sum + s.totalAmount, 0);
+      months.push({ month: monthKey, expenses, sales });
+    }
+    return months;
+  }, [filteredExpenses, filteredSales]);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -193,13 +228,13 @@ export function CompanyDashboard() {
 
       {/* Charts Row - Recent Activity and Expenses Category (same row on desktop) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <ActivityChart data={[]} />
+        <ActivityChart data={activityChartData} />
         <ExpensesPieChart data={expensesByCategory} />
       </div>
 
       {/* Bottom Widgets */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <CropStageProgress stages={filteredStages} />
+        <CropStageProgress stages={activeProject ? activeProjectStages : filteredStages} />
         <InventoryOverview inventoryItems={filteredInventory} />
         <SalesOverview />
       </div>

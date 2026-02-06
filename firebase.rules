@@ -10,21 +10,28 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Load the authenticated user's profile to get their companyId.
+    // Safely load the authenticated user's companyId (handles missing user doc or missing field).
     function userCompanyId() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId;
+      let userRef = /databases/$(database)/documents/users/$(request.auth.uid);
+      return exists(userRef) ? get(userRef).data.get('companyId', null) : null;
     }
 
     // For creates: ensure the new document's companyId matches the user's companyId.
     function matchesCompanyOnCreate() {
       return isSignedIn()
-        && request.resource.data.companyId == userCompanyId();
+        && request.resource.data.get('companyId', null) == userCompanyId();
     }
 
     // For updates/deletes: ensure the existing doc's companyId matches the user's companyId.
     function matchesCompanyOnDoc() {
       return isSignedIn()
-        && resource.data.companyId == userCompanyId();
+        && resource.data.get('companyId', null) == userCompanyId();
+    }
+
+    function isDeveloper() {
+      let userRef = /databases/$(database)/documents/users/$(request.auth.uid);
+      return isSignedIn() && exists(userRef)
+        && get(userRef).data.get('role', null) == 'developer';
     }
 
     // --- Users ---
@@ -39,122 +46,177 @@ service cloud.firestore {
     // --- Companies ---
 
     match /companies/{companyId} {
-      // Only users whose profile companyId matches can access their company document.
-      allow read, write: if isSignedIn() && userCompanyId() == companyId;
+      // Company users can access their own company; developer can read/write all (e.g. backups/restore).
+      allow read: if isSignedIn() && (userCompanyId() == companyId || isDeveloper());
+      allow write: if isSignedIn() && (userCompanyId() == companyId || isDeveloper());
     }
 
     // --- Projects ---
 
     match /projects/{projectId} {
-      // Allow any signed-in user to read projects; restrict modifications by company.
       allow read: if isSignedIn();
-      allow update, delete: if matchesCompanyOnDoc();
-      allow create: if matchesCompanyOnCreate();
+      allow update, delete: if isSignedIn() && (matchesCompanyOnDoc() || isDeveloper());
+      allow create: if isSignedIn() && (matchesCompanyOnCreate() || isDeveloper());
     }
 
     // --- Project Stages ---
 
     match /projectStages/{stageId} {
       allow read: if isSignedIn();
-      allow update, delete: if matchesCompanyOnDoc();
-      allow create: if matchesCompanyOnCreate();
+      allow update, delete: if isSignedIn() && (matchesCompanyOnDoc() || isDeveloper());
+      allow create: if isSignedIn() && (matchesCompanyOnCreate() || isDeveloper());
     }
 
     // --- Work Logs ---
 
     match /workLogs/{workLogId} {
       allow read: if isSignedIn();
-      allow update, delete: if matchesCompanyOnDoc();
-      allow create: if matchesCompanyOnCreate();
+      allow update, delete: if isSignedIn() && (matchesCompanyOnDoc() || isDeveloper());
+      allow create: if isSignedIn() && (matchesCompanyOnCreate() || isDeveloper());
     }
 
     // --- Expenses ---
 
     match /expenses/{expenseId} {
       allow read: if isSignedIn();
-      allow update, delete: if matchesCompanyOnDoc();
-      allow create: if matchesCompanyOnCreate();
+      allow update, delete: if isSignedIn() && (matchesCompanyOnDoc() || isDeveloper());
+      allow create: if isSignedIn() && (matchesCompanyOnCreate() || isDeveloper());
     }
 
     // --- Season Challenges ---
 
     match /seasonChallenges/{challengeId} {
       allow read: if isSignedIn();
-      allow update, delete: if matchesCompanyOnDoc();
-      allow create: if matchesCompanyOnCreate();
+      allow update, delete: if isSignedIn() && (matchesCompanyOnDoc() || isDeveloper());
+      allow create: if isSignedIn() && (matchesCompanyOnCreate() || isDeveloper());
     }
 
     // --- Inventory Usage ---
 
     match /inventoryUsage/{usageId} {
       allow read: if isSignedIn();
-      allow update, delete: if matchesCompanyOnDoc();
-      allow create: if matchesCompanyOnCreate();
+      allow update, delete: if isSignedIn() && (matchesCompanyOnDoc() || isDeveloper());
+      allow create: if isSignedIn() && (matchesCompanyOnCreate() || isDeveloper());
     }
 
     // --- Inventory Items ---
 
     match /inventoryItems/{itemId} {
       allow read: if isSignedIn();
-      allow update, delete: if matchesCompanyOnDoc();
-      allow create: if matchesCompanyOnCreate();
+      allow update, delete: if isSignedIn() && (matchesCompanyOnDoc() || isDeveloper());
+      allow create: if isSignedIn() && (matchesCompanyOnCreate() || isDeveloper());
     }
 
     // --- Inventory Categories ---
 
     match /inventoryCategories/{categoryId} {
       allow read: if isSignedIn();
-      allow update, delete: if matchesCompanyOnDoc();
-      allow create: if matchesCompanyOnCreate();
+      allow update, delete: if isSignedIn() && (matchesCompanyOnDoc() || isDeveloper());
+      allow create: if isSignedIn() && (matchesCompanyOnCreate() || isDeveloper());
     }
 
     // --- Inventory Purchases ---
 
     match /inventoryPurchases/{purchaseId} {
       allow read: if isSignedIn();
-      allow update, delete: if matchesCompanyOnDoc();
-      allow create: if matchesCompanyOnCreate();
+      allow update, delete: if isSignedIn() && (matchesCompanyOnDoc() || isDeveloper());
+      allow create: if isSignedIn() && (matchesCompanyOnCreate() || isDeveloper());
     }
 
     // --- Harvests ---
 
     match /harvests/{harvestId} {
       allow read: if isSignedIn();
-      allow update, delete: if matchesCompanyOnDoc();
-      allow create: if matchesCompanyOnCreate();
+      allow update, delete: if isSignedIn() && (matchesCompanyOnDoc() || isDeveloper());
+      allow create: if isSignedIn() && (matchesCompanyOnCreate() || isDeveloper());
     }
 
     // --- Sales ---
 
     match /sales/{saleId} {
       allow read: if isSignedIn();
-      allow update, delete: if matchesCompanyOnDoc();
-      allow create: if matchesCompanyOnCreate();
+      allow update, delete: if isSignedIn() && (matchesCompanyOnDoc() || isDeveloper());
+      allow create: if isSignedIn() && (matchesCompanyOnCreate() || isDeveloper());
     }
 
     // --- Suppliers ---
 
     match /suppliers/{supplierId} {
       allow read: if isSignedIn();
-      allow update, delete: if matchesCompanyOnDoc();
-      allow create: if matchesCompanyOnCreate();
+      allow update, delete: if isSignedIn() && (matchesCompanyOnDoc() || isDeveloper());
+      allow create: if isSignedIn() && (matchesCompanyOnCreate() || isDeveloper());
     }
 
     // --- Employees ---
 
     match /employees/{employeeId} {
       allow read: if isSignedIn();
-      allow update, delete: if matchesCompanyOnDoc();
-      allow create: if matchesCompanyOnCreate();
+      allow update, delete: if isSignedIn() && (matchesCompanyOnDoc() || isDeveloper());
+      allow create: if isSignedIn() && (matchesCompanyOnCreate() || isDeveloper());
+    }
+
+    // --- Deliveries ---
+
+    match /deliveries/{deliveryId} {
+      allow read: if isSignedIn();
+      allow update, delete: if isSignedIn() && (matchesCompanyOnDoc() || isDeveloper());
+      allow create: if isSignedIn() && (matchesCompanyOnCreate() || isDeveloper());
+    }
+
+    // --- Needed Items ---
+
+    match /neededItems/{itemId} {
+      allow read: if isSignedIn();
+      allow update, delete: if isSignedIn() && (matchesCompanyOnDoc() || isDeveloper());
+      allow create: if isSignedIn() && (matchesCompanyOnCreate() || isDeveloper());
     }
 
     // --- Feedback ---
 
     match /feedback/{feedbackId} {
-      // Feedback is linked to a company; enforce same-company access for writes.
       allow read: if isSignedIn();
-      allow update, delete: if matchesCompanyOnDoc();
-      allow create: if matchesCompanyOnCreate();
+      allow update, delete: if isSignedIn() && (matchesCompanyOnDoc() || isDeveloper());
+      allow create: if isSignedIn() && (matchesCompanyOnCreate() || isDeveloper());
+    }
+
+    // --- Developer-only: company data backups (only developer can read/write) ---
+    match /developerBackups/{companyId} {
+      allow read, write: if isDeveloper();
+      match /snapshots/{snapshotId} {
+        allow read, write: if isDeveloper();
+      }
+    }
+
+    // --- Platform expenses: FarmVault (developer) operational expenses ---
+    match /platformExpenses/{expenseId} {
+      allow read: if isDeveloper();
+      allow create: if isDeveloper();
+      allow update: if isDeveloper();
+      allow delete: if isDeveloper();
+    }
+
+    // --- Audit logs: developer-only read (written by backend/developer actions) ---
+    match /auditLogs/{logId} {
+      allow read: if isDeveloper();
+      allow create: if isDeveloper();
+      allow update, delete: if false;
+    }
+
+    // --- Code Red: urgent developer–admin communication (e.g. data recovery) ---
+    match /codeRed/{requestId} {
+      allow read: if isSignedIn() && (
+        resource.data.get('companyId', null) == userCompanyId() || isDeveloper()
+      );
+      allow create: if isSignedIn() && request.resource.data.get('companyId', null) == userCompanyId();
+      allow update, delete: if isSignedIn() && (
+        resource.data.get('companyId', null) == userCompanyId() || isDeveloper()
+      );
+      match /messages/{messageId} {
+        allow read, write: if isSignedIn() && (
+          get(/databases/$(database)/documents/codeRed/$(requestId)).data.get('companyId', null) == userCompanyId()
+          || isDeveloper()
+        );
+      }
     }
 
     // --- Fallback: deny everything else by default ---

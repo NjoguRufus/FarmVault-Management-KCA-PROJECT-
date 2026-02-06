@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Calendar as CalendarIcon, Sprout } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { CropType } from '@/types';
 import { cropStageConfig, generateStageTimeline, getCropStages } from '@/lib/cropStageConfig';
 import { useQueryClient } from '@tanstack/react-query';
@@ -21,6 +21,7 @@ import {
 export default function NewProjectPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const [name, setName] = useState('');
   const [cropType, setCropType] = useState<CropType>('tomatoes');
@@ -36,9 +37,11 @@ export default function NewProjectPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !plantingDate) return;
+    if (saving) return; // Prevent double submit
 
     setSaving(true);
     try {
+      // Create project doc first so it appears in the list immediately
       const projectRef = await addDoc(collection(db, 'projects'), {
         name,
         companyId: user.companyId,
@@ -52,59 +55,62 @@ export default function NewProjectPage() {
         budget: Number(budget || '0'),
         createdAt: serverTimestamp(),
         createdBy: user.id,
+        setupComplete: false,
       });
 
-      const stageDefs = getCropStages(cropType);
-      const timeline = generateStageTimeline(cropType, plantingDate, startingStageIndex);
-      
-      // Create all stages: completed ones before starting index, and future ones
-      for (let i = 0; i < stageDefs.length; i++) {
-        const def = stageDefs[i];
-        
-        if (i < startingStageIndex) {
-          // Create completed stages for stages before the starting index
-          const completedStartDate = new Date(plantingDate);
-          completedStartDate.setDate(completedStartDate.getDate() - (startingStageIndex - i) * 7); // Rough estimate
-          const completedEndDate = new Date(completedStartDate);
-          completedEndDate.setDate(completedEndDate.getDate() + def.expectedDurationDays - 1);
-          
-          await addDoc(collection(db, 'projectStages'), {
-            projectId: projectRef.id,
-            companyId: user.companyId,
-            cropType,
-            stageName: def.name,
-            stageIndex: def.order,
-            startDate: completedStartDate,
-            endDate: completedEndDate,
-            expectedDurationDays: def.expectedDurationDays,
-            status: 'completed',
-            createdAt: serverTimestamp(),
-          });
-        } else {
-          // Create stages from the timeline (starting from startingStageIndex)
-          const timelineStage = timeline.find(t => t.stageIndex === def.order);
-          if (timelineStage) {
-            await addDoc(collection(db, 'projectStages'), {
-              projectId: projectRef.id,
-              companyId: user.companyId,
-              cropType,
-              stageName: timelineStage.stageName,
-              stageIndex: timelineStage.stageIndex,
-              startDate: timelineStage.startDate,
-              endDate: timelineStage.endDate,
-              expectedDurationDays: timelineStage.expectedDurationDays,
-              createdAt: serverTimestamp(),
-            });
-          }
-        }
-      }
-
-      // Invalidate queries to refresh data immediately
       queryClient.invalidateQueries({ queryKey: ['projects'] });
-      queryClient.invalidateQueries({ queryKey: ['projectStages'] });
-      queryClient.invalidateQueries({ queryKey: ['project'] });
-
       navigate('/projects', { replace: true });
+
+      // Create stages in background; then mark project setup complete
+      (async () => {
+        try {
+          const stageDefs = getCropStages(cropType);
+          const timeline = generateStageTimeline(cropType, plantingDate, startingStageIndex);
+
+          for (let i = 0; i < stageDefs.length; i++) {
+            const def = stageDefs[i];
+            if (i < startingStageIndex) {
+              const completedStartDate = new Date(plantingDate);
+              completedStartDate.setDate(completedStartDate.getDate() - (startingStageIndex - i) * 7);
+              const completedEndDate = new Date(completedStartDate);
+              completedEndDate.setDate(completedEndDate.getDate() + def.expectedDurationDays - 1);
+              await addDoc(collection(db, 'projectStages'), {
+                projectId: projectRef.id,
+                companyId: user.companyId,
+                cropType,
+                stageName: def.name,
+                stageIndex: def.order,
+                startDate: completedStartDate,
+                endDate: completedEndDate,
+                expectedDurationDays: def.expectedDurationDays,
+                status: 'completed',
+                createdAt: serverTimestamp(),
+              });
+            } else {
+              const timelineStage = timeline.find(t => t.stageIndex === def.order);
+              if (timelineStage) {
+                await addDoc(collection(db, 'projectStages'), {
+                  projectId: projectRef.id,
+                  companyId: user.companyId,
+                  cropType,
+                  stageName: timelineStage.stageName,
+                  stageIndex: timelineStage.stageIndex,
+                  startDate: timelineStage.startDate,
+                  endDate: timelineStage.endDate,
+                  expectedDurationDays: timelineStage.expectedDurationDays,
+                  createdAt: serverTimestamp(),
+                });
+              }
+            }
+          }
+          await updateDoc(doc(db, 'projects', projectRef.id), { setupComplete: true });
+          queryClient.invalidateQueries({ queryKey: ['projects'] });
+          queryClient.invalidateQueries({ queryKey: ['projectStages'] });
+          queryClient.invalidateQueries({ queryKey: ['project'] });
+        } catch (err) {
+          console.error('Error creating stages:', err);
+        }
+      })();
     } finally {
       setSaving(false);
     }

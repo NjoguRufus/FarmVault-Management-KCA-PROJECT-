@@ -1,11 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Building2, ShieldCheck, Wrench } from 'lucide-react';
+import { Building2, ShieldCheck } from 'lucide-react';
 import { registerCompanyAdmin } from '@/services/authService';
 import { createCompany, createCompanyUserProfile } from '@/services/companyService';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { auth, db } from '@/lib/firebase';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 export default function SetupCompany() {
   const navigate = useNavigate();
@@ -18,8 +15,6 @@ export default function SetupCompany() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [devLoading, setDevLoading] = useState(false);
-  const [devError, setDevError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,36 +47,6 @@ export default function SetupCompany() {
       setError(err?.message || 'Failed to create company account');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleCreateDeveloper = async () => {
-    setDevError(null);
-    setDevLoading(true);
-    try {
-      const email = window.prompt('Developer email (for super admin login)');
-      const password = window.prompt('Developer password');
-      if (!email || !password) {
-        setDevLoading(false);
-        return;
-      }
-
-      const cred = await createUserWithEmailAndPassword(auth, email, password);
-      const uid = cred.user.uid;
-
-      await setDoc(doc(db, 'users', uid), {
-        companyId: null,
-        name: 'System Developer',
-        email,
-        role: 'developer',
-        createdAt: serverTimestamp(),
-      });
-
-      alert('Developer super admin account created. You can now log in with these credentials.');
-    } catch (err: any) {
-      setDevError(err?.message || 'Failed to create developer account');
-    } finally {
-      setDevLoading(false);
     }
   };
 
@@ -212,32 +177,6 @@ export default function SetupCompany() {
               By continuing you create a new FarmVault tenant. You can invite additional users
               later from the admin settings.
             </p>
-
-            <div className="pt-4 mt-2 border-t border-border/40 space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Wrench className="h-3 w-3" />
-                  <span>Developer tools</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleCreateDeveloper}
-                  disabled={devLoading}
-                  className="fv-btn fv-btn--secondary text-xs px-3 py-1 h-auto"
-                >
-                  {devLoading ? 'Creating…' : 'Create Developer Account'}
-                </button>
-              </div>
-              {devError && (
-                <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[11px] text-destructive">
-                  {devError}
-                </div>
-              )}
-              <p className="text-[11px] text-muted-foreground">
-                Temporary: creates a global super admin (role `developer`) for system-wide
-                management and a personalized sidebar.
-              </p>
-            </div>
           </form>
         </div>
       </div>

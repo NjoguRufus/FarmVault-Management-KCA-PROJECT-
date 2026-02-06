@@ -18,6 +18,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Building2,
+  Database,
+  Settings,
 } from 'lucide-react';
 import { cn, getDisplayRole } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
@@ -36,6 +38,7 @@ const companyNavItems = [
   { title: 'Employees', href: '/employees', icon: Users },
   { title: 'Reports', href: '/reports', icon: FileText },
   { title: 'Billing & Subscription', href: '/billing', icon: CreditCard },
+  { title: 'Settings', href: '/settings', icon: Settings },
   { title: 'Support', href: '/support', icon: HelpCircle },
   { title: 'Feedback', href: '/feedback', icon: MessageSquare },
 ];
@@ -45,6 +48,11 @@ const developerNavItems = [
   { title: 'Companies', href: '/admin/companies', icon: Building2 },
   { title: 'Users', href: '/admin/users', icon: Users },
   { title: 'Pending Users', href: '/admin/users/pending', icon: Users },
+  { title: 'Finances', href: '/admin/finances', icon: CreditCard },
+  { title: 'FarmVault Expenses', href: '/admin/expenses', icon: Receipt },
+  { title: 'Backups', href: '/admin/backups', icon: Database },
+  { title: 'Code Red', href: '/admin/code-red', icon: AlertTriangle },
+  { title: 'Feedback inbox', href: '/admin/feedback', icon: MessageSquare },
   { title: 'Audit Logs', href: '/admin/audit-logs', icon: FileText },
 ];
 
@@ -75,28 +83,33 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
     employeeRole === 'manager' ||
     employeeRole === 'operations-manager'
   ) {
-    // Manager: manager operations + inventory
+    // Manager: manager operations + inventory + feedback
     navItems = [
       { title: 'Manager Operations', href: '/manager/operations', icon: Wrench },
       { title: 'Inventory', href: '/inventory', icon: Package },
+      { title: 'Feedback', href: '/feedback', icon: MessageSquare },
     ];
   } else if (
     user.role === 'broker' ||
     employeeRole === 'sales-broker' ||
     employeeRole === 'broker'
   ) {
-    // Broker: own dashboard + broker harvest & sales + expenses (no projects)
+    // Broker: own dashboard + broker harvest & sales + expenses + feedback
     navItems = [
       { title: 'Broker Dashboard', href: '/broker', icon: LayoutDashboard },
       { title: 'Harvest & Sales', href: '/broker/harvest-sales', icon: TrendingUp },
       { title: 'Market Expenses', href: '/broker/expenses', icon: Receipt },
+      { title: 'Feedback', href: '/feedback', icon: MessageSquare },
     ];
   } else if (
     (user.role === 'employee' || user.role === ('user' as any)) &&
     (employeeRole === 'logistics-driver' || employeeRole === 'driver')
   ) {
-    // Driver: own dashboard only
-    navItems = [{ title: 'Driver Dashboard', href: '/driver', icon: Truck }];
+    // Driver: own dashboard + feedback
+    navItems = [
+      { title: 'Driver Dashboard', href: '/driver', icon: Truck },
+      { title: 'Feedback', href: '/feedback', icon: MessageSquare },
+    ];
   } else {
     // Fallback: minimal company nav
     navItems = companyNavItems.filter((item) => item.href === '/dashboard');

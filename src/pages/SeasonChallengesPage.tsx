@@ -723,13 +723,30 @@ export default function SeasonChallengesPage() {
                     <div key={idx} className={cn("fv-card p-3 space-y-2", needsPurchase && "border-fv-warning/50 bg-fv-warning/5")}>
                       <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
                         <div className="col-span-1 sm:col-span-4">
-                          <label className="text-xs text-muted-foreground mb-1 block">Item Name</label>
-                          <input
-                            className="fv-input w-full"
-                            value={item.itemName}
-                            onChange={(e) => updateItemInEdit(idx, 'itemName', e.target.value)}
-                            placeholder="Enter item name"
-                          />
+                          <label className="text-xs text-muted-foreground mb-1 block">Item (from inventory)</label>
+                          <Select
+                            value={item.inventoryItemId || ''}
+                            onValueChange={(value) => {
+                              const inv = allInventoryItems.find(i => i.id === value);
+                              if (inv) {
+                                updateItemInEdit(idx, 'inventoryItemId', inv.id);
+                                updateItemInEdit(idx, 'itemName', inv.name);
+                                updateItemInEdit(idx, 'category', inv.category);
+                                updateItemInEdit(idx, 'unit', inv.unit);
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Select item from inventory" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {allInventoryItems.map((inv) => (
+                                <SelectItem key={inv.id} value={inv.id}>
+                                  {inv.name} ({inv.category})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </div>
                         <div className="col-span-1 sm:col-span-3">
                           <label className="text-xs text-muted-foreground mb-1 block">Category</label>

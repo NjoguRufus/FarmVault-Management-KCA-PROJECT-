@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { AppSidebar } from './AppSidebar';
 import { TopNavbar } from './TopNavbar';
+import { PaymentReminderBanner } from './PaymentReminderBanner';
 import { AIChatButton } from '@/components/ai/AIChatButton';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
@@ -88,6 +89,8 @@ export function MainLayout() {
         sidebarCollapsed={sidebarCollapsed} 
         onSidebarToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
       />
+
+      <PaymentReminderBanner />
       
       <main
         className={cn(

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Plus, Receipt } from 'lucide-react';
+import { Plus, Receipt, List, LayoutGrid } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCollection } from '@/hooks/useCollection';
 import { useQueryClient } from '@tanstack/react-query';
@@ -70,6 +70,7 @@ export default function BrokerExpensesPage() {
   }, [brokerExpenses]);
 
   const [addOpen, setAddOpen] = useState(false);
+  const [expensesViewMode, setExpensesViewMode] = useState<'list' | 'card'>('list');
   const [category, setCategory] = useState<ExpenseCategory>('space');
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
@@ -138,20 +139,20 @@ export default function BrokerExpensesPage() {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3">
         <SimpleStatCard
           title="Total Expenses"
           value={formatCurrency(totalExpenses)}
           icon={Receipt}
           iconVariant="warning"
-          layout="vertical"
+          layout="mobile-compact"
         />
         <SimpleStatCard
           title="Expense Entries"
           value={brokerExpenses.length}
           icon={Receipt}
           iconVariant="primary"
-          layout="vertical"
+          layout="mobile-compact"
         />
       </div>
 
@@ -160,16 +161,44 @@ export default function BrokerExpensesPage() {
         <ExpensesBarChart data={pieData} />
       </div>
 
-      <div className="fv-card">
-        <h3 className="text-lg font-semibold mb-4">My Market Expenses</h3>
+      <div>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+          <h3 className="text-lg font-semibold">My Market Expenses</h3>
+          <div className="flex rounded-lg border border-border overflow-hidden">
+            <button
+              type="button"
+              className={`p-2 transition-colors ${
+                expensesViewMode === 'list'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted/50 hover:bg-muted text-muted-foreground'
+              }`}
+              onClick={() => setExpensesViewMode('list')}
+              title="List view"
+            >
+              <List className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              className={`p-2 transition-colors ${
+                expensesViewMode === 'card'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted/50 hover:bg-muted text-muted-foreground'
+              }`}
+              onClick={() => setExpensesViewMode('card')}
+              title="Card view"
+            >
+              <LayoutGrid className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
         {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
         {!isLoading && sortedExpenses.length === 0 && (
-          <p className="text-sm text-muted-foreground py-8 text-center">
+          <p className="text-sm text-muted-foreground py-8 text-center rounded-xl border border-border bg-card/60">
             No market expenses yet. Add an expense to see it here.
           </p>
         )}
-        {!isLoading && sortedExpenses.length > 0 && (
-          <div className="overflow-x-auto">
+        {!isLoading && sortedExpenses.length > 0 && expensesViewMode === 'list' && (
+          <div className="overflow-x-auto rounded-xl border border-border bg-card/60 overflow-hidden">
             <table className="fv-table">
               <thead>
                 <tr>
@@ -192,8 +221,24 @@ export default function BrokerExpensesPage() {
             </table>
           </div>
         )}
+        {!isLoading && sortedExpenses.length > 0 && expensesViewMode === 'card' && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {sortedExpenses.map((e) => (
+              <div key={e.id} className="p-3 sm:p-4 rounded-xl border border-border bg-card/60">
+                <div className="flex justify-between items-start gap-2">
+                  <div>
+                    <p className="font-medium text-sm">{getExpenseCategoryLabel(e.category)}</p>
+                    <p className="text-xs text-muted-foreground">{formatDate(e.date)}</p>
+                    {e.description && <p className="text-sm mt-1 line-clamp-2">{e.description}</p>}
+                  </div>
+                  <span className="font-semibold shrink-0">{formatCurrency(e.amount)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
         {!isLoading && sortedExpenses.length > 0 && (
-          <p className="text-sm font-medium mt-4 border-t pt-4">
+          <p className="text-sm font-medium mt-4">
             Total: {formatCurrency(totalExpenses)}
           </p>
         )}

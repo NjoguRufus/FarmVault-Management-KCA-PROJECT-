@@ -1,7 +1,134 @@
-import React from 'react';
-import { HelpCircle, MessageCircle, FileText, Mail, Phone, ExternalLink } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { HelpCircle, MessageCircle, FileText, Mail, Phone, ExternalLink, AlertTriangle, Send, Loader2 } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import {
+  listCodeRedsForCompany,
+  getCodeRed,
+  listCodeRedMessages,
+  addCodeRedMessage,
+  createCodeRed,
+  type CodeRedRequestData,
+  type CodeRedMessageData,
+} from '@/services/codeRedService';
+import { format } from 'date-fns';
+import { useNotifications } from '@/contexts/NotificationContext';
 
 export default function SupportPage() {
+  const { user } = useAuth();
+  const { addNotification } = useNotifications();
+  const isCompanyAdmin = user?.role === 'company-admin' || (user as any)?.role === 'company_admin';
+
+  const [codeReds, setCodeReds] = useState<CodeRedRequestData[]>([]);
+  const [loadingCodeRed, setLoadingCodeRed] = useState(true);
+  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+  const [selectedRequest, setSelectedRequest] = useState<CodeRedRequestData | null>(null);
+  const [messages, setMessages] = useState<CodeRedMessageData[]>([]);
+  const [newMessageBody, setNewMessageBody] = useState('');
+  const [sending, setSending] = useState(false);
+  const [codeRedError, setCodeRedError] = useState<string | null>(null);
+
+  // New Code Red form (company admin only)
+  const [showNewCodeRed, setShowNewCodeRed] = useState(false);
+  const [newCodeRedMessage, setNewCodeRedMessage] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    if (!isCompanyAdmin || !user?.companyId) {
+      setLoadingCodeRed(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await listCodeRedsForCompany(user.companyId!);
+        if (!cancelled) setCodeReds(list);
+      } catch (e: any) {
+        if (!cancelled) setCodeRedError(e?.message || 'Failed to load Code Red');
+      } finally {
+        if (!cancelled) setLoadingCodeRed(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isCompanyAdmin, user?.companyId]);
+
+  useEffect(() => {
+    if (!selectedRequestId) {
+      setSelectedRequest(null);
+      setMessages([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const req = await getCodeRed(selectedRequestId);
+        if (cancelled) return;
+        setSelectedRequest(req ?? null);
+        if (req) {
+          const msgs = await listCodeRedMessages(selectedRequestId);
+          if (!cancelled) setMessages(msgs);
+        }
+      } catch (e: any) {
+        if (!cancelled) setCodeRedError(e?.message || 'Failed to load thread');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedRequestId]);
+
+  const handleSendMessage = async () => {
+    if (!selectedRequestId || !newMessageBody.trim() || !user) return;
+    setSending(true);
+    setCodeRedError(null);
+    try {
+      const role = user.role === 'company-admin' || (user as any).role === 'company_admin' ? 'company-admin' : user.role;
+      await addCodeRedMessage(
+        selectedRequestId,
+        user.id,
+        user.name || user.email || 'User',
+        role,
+        newMessageBody.trim()
+      );
+      setNewMessageBody('');
+      const msgs = await listCodeRedMessages(selectedRequestId);
+      setMessages(msgs);
+    } catch (e: any) {
+      setCodeRedError(e?.message || 'Failed to send message');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleCreateCodeRed = async () => {
+    if (!user?.companyId || !newCodeRedMessage.trim()) return;
+    setCreating(true);
+    setCodeRedError(null);
+    try {
+      await createCodeRed(
+        user.companyId,
+        user.companyName || 'Our company',
+        user.id,
+        user.name || user.email || 'Admin',
+        user.email || '',
+        newCodeRedMessage.trim()
+      );
+      setNewCodeRedMessage('');
+      setShowNewCodeRed(false);
+      const list = await listCodeRedsForCompany(user.companyId);
+      setCodeReds(list);
+      addNotification({ title: 'Code Red sent', message: 'The developer has been notified.', type: 'warning' });
+    } catch (e: any) {
+      setCodeRedError(e?.message || 'Failed to send Code Red');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const formatDate = (ts: any) => {
+    if (!ts) return '—';
+    if (ts.toDate) return format(ts.toDate(), 'PPp');
+    if (ts.seconds) return format(new Date(ts.seconds * 1000), 'PPp');
+    return '—';
+  };
+
   const supportOptions = [
     {
       title: 'Documentation',
@@ -54,13 +181,131 @@ export default function SupportPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Page Header */}
       <div>
         <h1 className="text-2xl font-bold text-foreground">Support</h1>
         <p className="text-sm text-muted-foreground mt-1">
           Get help and find answers to your questions
         </p>
       </div>
+
+      {/* Code Red — Company Admin only */}
+      {isCompanyAdmin && (
+        <div className="fv-card border-destructive/30 border">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertTriangle className="h-5 w-5 text-destructive" />
+            <h3 className="text-lg font-semibold text-foreground">Code Red</h3>
+          </div>
+          <p className="text-sm text-muted-foreground mb-4">
+            For urgent issues only (e.g. data loss, need recovery). The developer will see your request and can restore your data from a backup. Use for critical emergencies.
+          </p>
+          {codeRedError && (
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive mb-4">
+              {codeRedError}
+            </div>
+          )}
+          {!showNewCodeRed ? (
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setShowNewCodeRed(true)}
+                className="fv-btn fv-btn--primary bg-destructive/90 hover:bg-destructive"
+              >
+                <AlertTriangle className="h-4 w-4" />
+                Send Code Red
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <textarea
+                placeholder="Describe the urgent issue (e.g. we lost our data, need recovery…)"
+                value={newCodeRedMessage}
+                onChange={(e) => setNewCodeRedMessage(e.target.value)}
+                className="fv-input min-h-[80px] w-full"
+                rows={3}
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={creating || !newCodeRedMessage.trim()}
+                  onClick={handleCreateCodeRed}
+                  className="fv-btn fv-btn--primary bg-destructive/90 hover:bg-destructive"
+                >
+                  {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  Send Code Red
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowNewCodeRed(false); setNewCodeRedMessage(''); }}
+                  className="fv-btn fv-btn--ghost"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {loadingCodeRed ? (
+            <p className="text-sm text-muted-foreground mt-4 flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+            </p>
+          ) : codeReds.length > 0 && (
+            <div className="mt-6 pt-4 border-t border-border">
+              <h4 className="text-sm font-medium text-foreground mb-2">Your Code Red requests</h4>
+              <div className="space-y-2">
+                {codeReds.map((r) => (
+                  <div key={r.id} className="rounded-lg bg-muted/30 p-3">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedRequestId(selectedRequestId === r.id ? null : r.id)}
+                      className="w-full text-left font-medium text-foreground"
+                    >
+                      {r.message.slice(0, 80)}{r.message.length > 80 ? '…' : ''} · {r.status} · {formatDate(r.updatedAt)}
+                    </button>
+                    {selectedRequestId === r.id && selectedRequest && (
+                      <div className="mt-3 space-y-2">
+                        <div className="space-y-1 max-h-40 overflow-y-auto">
+                          {messages.map((m) => (
+                            <div
+                              key={m.id}
+                              className={`p-2 rounded text-sm ${
+                                m.fromRole === 'developer' ? 'bg-primary/10' : 'bg-muted/50'
+                              }`}
+                            >
+                              <span className="font-medium">{m.fromName}</span>
+                              <span className="text-xs text-muted-foreground ml-1">({m.fromRole})</span>
+                              <p className="mt-0.5">{m.body}</p>
+                              <p className="text-xs text-muted-foreground">{formatDate(m.createdAt)}</p>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            placeholder="Reply…"
+                            value={newMessageBody}
+                            onChange={(e) => setNewMessageBody(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                            className="fv-input flex-1"
+                          />
+                          <button
+                            type="button"
+                            disabled={sending || !newMessageBody.trim()}
+                            onClick={handleSendMessage}
+                            className="fv-btn fv-btn--primary"
+                          >
+                            {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                            Send
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Support Options */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

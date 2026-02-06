@@ -2,8 +2,11 @@ import React, { useState } from 'react';
 import { Send, Star, MessageSquare } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { useAuth } from '@/contexts/AuthContext';
+import { getDisplayRole } from '@/lib/utils';
 
 export default function FeedbackPage() {
+  const { user } = useAuth();
   const [rating, setRating] = useState(0);
   const [hoveredRating, setHoveredRating] = useState(0);
   const [feedbackType, setFeedbackType] = useState('general');
@@ -17,23 +20,32 @@ export default function FeedbackPage() {
       return;
     }
 
+    const roleLabel = user ? getDisplayRole(user) : 'Unknown';
+
     await addDoc(collection(db, 'feedback'), {
       rating,
       type: feedbackType,
       message,
+      companyId: user?.companyId ?? null,
+      userId: user?.id ?? null,
+      userName: user?.name ?? null,
+      userEmail: user?.email ?? null,
+      userRole: user?.role ?? null,
+      userRoleLabel: roleLabel,
+      employeeRole: (user as { employeeRole?: string })?.employeeRole ?? null,
       createdAt: serverTimestamp(),
     });
 
-    alert('Thank you for your feedback! It has been saved to Firebase.');
+    alert('Feedback submitted to the relevant team.');
     setRating(0);
     setMessage('');
   };
 
   return (
-    <div className="space-y-6 animate-fade-in max-w-2xl">
+    <div className="space-y-6 animate-fade-in max-w-2xl w-full px-2 sm:px-0">
       {/* Page Header */}
       <div>
-        <h1 className="text-2xl font-bold text-foreground">Feedback</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-foreground">Feedback</h1>
         <p className="text-sm text-muted-foreground mt-1">
           Help us improve FarmVault by sharing your thoughts
         </p>
@@ -45,7 +57,7 @@ export default function FeedbackPage() {
           {/* Rating */}
           <div>
             <label className="block text-sm font-medium mb-3">How would you rate your experience?</label>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {[1, 2, 3, 4, 5].map((star) => (
                 <button
                   key={star}

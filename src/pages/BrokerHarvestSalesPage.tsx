@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { TrendingUp, ShoppingCart } from 'lucide-react';
+import { TrendingUp, ShoppingCart, List, LayoutGrid } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCollection } from '@/hooks/useCollection';
 import { useQueryClient } from '@tanstack/react-query';
@@ -111,6 +111,8 @@ export default function BrokerHarvestSalesPage() {
   const pendingCount = brokerSales.filter((s) => s.status === 'pending').length;
 
   const [harvestDateFilter, setHarvestDateFilter] = useState<string>('');
+  const [harvestViewMode, setHarvestViewMode] = useState<'list' | 'card'>('card');
+  const [salesViewMode, setSalesViewMode] = useState<'list' | 'card'>('list');
   const [saleStatusFilter, setSaleStatusFilter] = useState<
     'all' | 'pending' | 'partial' | 'completed' | 'cancelled'
   >('all');
@@ -248,59 +250,87 @@ export default function BrokerHarvestSalesPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
         <SimpleStatCard
           title="Allocated Harvests"
           value={brokerHarvests.length}
           icon={TrendingUp}
           iconVariant="primary"
-          layout="vertical"
+          layout="mobile-compact"
         />
         <SimpleStatCard
           title="Total Quantity"
           value={`${totalHarvestQty.toLocaleString()} kg`}
           icon={TrendingUp}
           iconVariant="primary"
-          layout="vertical"
+          layout="mobile-compact"
         />
         <SimpleStatCard
           title="Total Revenue"
           value={formatCurrency(totalSalesAmount)}
           icon={TrendingUp}
           iconVariant="gold"
-          layout="vertical"
+          layout="mobile-compact"
         />
         <SimpleStatCard
           title="Total Expenses"
           value={formatCurrency(totalExpensesAmount)}
           icon={TrendingUp}
           iconVariant="warning"
-          layout="vertical"
+          layout="mobile-compact"
         />
         <SimpleStatCard
           title="Net (after expenses)"
           value={formatCurrency(netAfterExpenses)}
           icon={TrendingUp}
           iconVariant={netAfterExpenses >= 0 ? 'success' : 'warning'}
-          layout="vertical"
+          layout="mobile-compact"
         />
         <SimpleStatCard
           title="Completed / Pending"
           value={`${completedCount} / ${pendingCount}`}
           valueVariant="warning"
-          layout="vertical"
+          layout="mobile-compact"
         />
       </div>
 
-      {/* Harvest cards allocated to this broker */}
-      <div className="fv-card">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+      {/* Harvests Allocated to You – no container, list/card toggle */}
+      <div>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
           <h3 className="text-lg font-semibold">Harvests Allocated to You</h3>
           <div className="flex flex-wrap items-center gap-2">
+            <div className="flex rounded-lg border border-border overflow-hidden">
+              <button
+                type="button"
+                className={cn(
+                  'p-2 transition-colors',
+                  harvestViewMode === 'list'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted/50 hover:bg-muted text-muted-foreground',
+                )}
+                onClick={() => setHarvestViewMode('list')}
+                title="List view"
+              >
+                <List className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  'p-2 transition-colors',
+                  harvestViewMode === 'card'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted/50 hover:bg-muted text-muted-foreground',
+                )}
+                onClick={() => setHarvestViewMode('card')}
+                title="Card view"
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </button>
+            </div>
             <span className="text-xs text-muted-foreground">Day</span>
             <input
               type="date"
-              className="fv-input w-40"
+              className="fv-input w-36"
               value={harvestDateFilter}
               onChange={(e) => setHarvestDateFilter(e.target.value)}
               max={new Date().toISOString().slice(0, 10)}
@@ -322,14 +352,56 @@ export default function BrokerHarvestSalesPage() {
         )}
 
         {filteredHarvests.length === 0 && !loadingHarvests && (
-          <p className="text-sm text-muted-foreground py-6 text-center">
+          <p className="text-sm text-muted-foreground py-6 text-center rounded-xl border border-border bg-card/60">
             {harvestDateFilter
               ? `No harvests allocated to you on this day. Try another date or clear the filter.`
               : 'No harvests allocated to you yet. When a harvest is assigned to you, it will appear here.'}
           </p>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {filteredHarvests.length > 0 && !loadingHarvests && harvestViewMode === 'list' && (
+          <div className="space-y-2">
+            {filteredHarvests.map((harvest) => {
+              const stock = harvestStock[harvest.id];
+              const remaining = stock?.remaining ?? harvest.quantity;
+              const sold = stock?.sold ?? 0;
+              const canRecordSale = remaining > 0;
+              return (
+                <div
+                  key={harvest.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => {
+                    if (canRecordSale) handleOpenRecordSale(harvest);
+                    else navigate(`/broker/harvest/${harvest.id}`);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter' && e.key !== ' ') return;
+                    if (canRecordSale) handleOpenRecordSale(harvest);
+                    else navigate(`/broker/harvest/${harvest.id}`);
+                  }}
+                  className={cn(
+                    'flex flex-wrap items-center gap-2 sm:gap-4 p-3 sm:p-4 rounded-xl border border-border bg-card/60 cursor-pointer hover:bg-muted/30 transition-colors',
+                    !canRecordSale && 'opacity-90',
+                  )}
+                >
+                  <span className="font-medium">{harvest.quantity.toLocaleString()} {harvest.unit}</span>
+                  <span className="text-sm text-muted-foreground">{formatDate(harvest.date)}</span>
+                  <span className="text-sm text-muted-foreground">Remaining: {remaining.toLocaleString()}</span>
+                  {sold > 0 && <span className="text-sm text-muted-foreground">Sold: {sold.toLocaleString()}</span>}
+                  {canRecordSale ? (
+                    <span className="fv-badge fv-badge--active text-xs ml-auto">Record sale</span>
+                  ) : (
+                    <span className="fv-badge bg-muted text-muted-foreground text-xs ml-auto">SOLD OUT</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {filteredHarvests.length > 0 && !loadingHarvests && harvestViewMode === 'card' && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
           {filteredHarvests.map((harvest) => {
             const stock = harvestStock[harvest.id];
             const remaining = stock?.remaining ?? harvest.quantity;
@@ -409,6 +481,7 @@ export default function BrokerHarvestSalesPage() {
             );
           })}
         </div>
+        )}
       </div>
 
       {/* Record Sale dialog (opened when broker clicks a harvest card) */}
@@ -573,12 +646,40 @@ export default function BrokerHarvestSalesPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Sales for this broker */}
-      <div className="fv-card">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+      {/* Your Sales – no container, list/card toggle */}
+      <div>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
           <h3 className="text-lg font-semibold">Your Sales</h3>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Filter by status</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex rounded-lg border border-border overflow-hidden">
+              <button
+                type="button"
+                className={cn(
+                  'p-2 transition-colors',
+                  salesViewMode === 'list'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted/50 hover:bg-muted text-muted-foreground',
+                )}
+                onClick={() => setSalesViewMode('list')}
+                title="List view"
+              >
+                <List className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  'p-2 transition-colors',
+                  salesViewMode === 'card'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted/50 hover:bg-muted text-muted-foreground',
+                )}
+                onClick={() => setSalesViewMode('card')}
+                title="Card view"
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </button>
+            </div>
+            <span className="text-xs text-muted-foreground">Status</span>
             <Select
               value={saleStatusFilter}
               onValueChange={(val) =>
@@ -604,76 +705,84 @@ export default function BrokerHarvestSalesPage() {
         )}
 
         {filteredSales.length === 0 && !loadingSales && (
-          <p className="text-sm text-muted-foreground py-6 text-center">
+          <p className="text-sm text-muted-foreground py-6 text-center rounded-xl border border-border bg-card/60">
             No sales recorded yet for your allocated harvests.
           </p>
         )}
 
-        <div className="hidden md:block overflow-x-auto">
-          <table className="fv-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Buyer</th>
-                <th>Quantity</th>
-                <th>Unit Price</th>
-                <th>Total</th>
-                <th>Status</th>
-                <th>Remainder</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredSales.map((sale) => {
-                const paid = (sale as any).amountPaid ?? 0;
-                const remainder = sale.totalAmount - paid;
-                return (
-                  <tr key={sale.id}>
-                    <td className="text-muted-foreground">{formatDate(sale.date)}</td>
-                    <td className="font-medium">{sale.buyerName}</td>
-                    <td>
-                      {sale.quantity.toLocaleString()} {sale.unit ?? 'units'}
-                    </td>
-                    <td>{formatCurrency(sale.unitPrice)}</td>
-                    <td className="font-semibold">{formatCurrency(sale.totalAmount)}</td>
-                    <td>
-                      <span className={cn('fv-badge capitalize', getStatusBadge(sale.status))}>
-                        {getPaymentStatusLabel(sale.status)}
-                      </span>
-                    </td>
-                    <td className="text-muted-foreground text-sm">
-                      {sale.status === 'partial' ? formatCurrency(remainder) : '—'}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        {filteredSales.length > 0 && !loadingSales && salesViewMode === 'list' && (
+          <div className="overflow-x-auto rounded-xl border border-border bg-card/60 overflow-hidden">
+            <table className="fv-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Buyer</th>
+                  <th>Quantity</th>
+                  <th>Unit Price</th>
+                  <th>Total</th>
+                  <th>Status</th>
+                  <th>Remainder</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredSales.map((sale) => {
+                  const paid = (sale as any).amountPaid ?? 0;
+                  const remainder = sale.totalAmount - paid;
+                  return (
+                    <tr key={sale.id}>
+                      <td className="text-muted-foreground">{formatDate(sale.date)}</td>
+                      <td className="font-medium">{sale.buyerName}</td>
+                      <td>
+                        {sale.quantity.toLocaleString()} {sale.unit ?? 'units'}
+                      </td>
+                      <td>{formatCurrency(sale.unitPrice)}</td>
+                      <td className="font-semibold">{formatCurrency(sale.totalAmount)}</td>
+                      <td>
+                        <span className={cn('fv-badge capitalize', getStatusBadge(sale.status))}>
+                          {getPaymentStatusLabel(sale.status)}
+                        </span>
+                      </td>
+                      <td className="text-muted-foreground text-sm">
+                        {sale.status === 'partial' ? formatCurrency(remainder) : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
 
-        <div className="md:hidden space-y-3">
-          {filteredSales.map((sale) => (
-              <div key={sale.id} className="p-4 bg-muted/30 rounded-lg">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-medium">{sale.buyerName}</span>
-                  <span className={cn('fv-badge capitalize', getStatusBadge(sale.status))}>
-                    {getPaymentStatusLabel(sale.status)}
-                  </span>
+        {filteredSales.length > 0 && !loadingSales && salesViewMode === 'card' && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {filteredSales.map((sale) => {
+              const paid = (sale as any).amountPaid ?? 0;
+              const remainder = sale.totalAmount - paid;
+              return (
+                <div key={sale.id} className="p-3 sm:p-4 rounded-xl border border-border bg-card/60">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="font-medium text-sm">{sale.buyerName}</span>
+                    <span className={cn('fv-badge capitalize text-xs', getStatusBadge(sale.status))}>
+                      {getPaymentStatusLabel(sale.status)}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{formatDate(sale.date)}</p>
+                  <div className="flex justify-between text-sm mt-1">
+                    <span className="text-muted-foreground">
+                      {sale.quantity.toLocaleString()} {sale.unit ?? 'units'}
+                    </span>
+                    <span className="font-semibold">{formatCurrency(sale.totalAmount)}</span>
+                  </div>
+                  {sale.status === 'partial' && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Remainder: {formatCurrency(remainder)}
+                    </p>
+                  )}
                 </div>
-                <p className="text-sm text-muted-foreground">{formatDate(sale.date)}</p>
-                <div className="flex justify-between text-sm mt-1">
-                  <span className="text-muted-foreground">
-                    {sale.quantity.toLocaleString()} {sale.unit ?? 'units'}
-                  </span>
-                  <span className="font-semibold">{formatCurrency(sale.totalAmount)}</span>
-                </div>
-                {sale.status === 'partial' && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Remainder: {formatCurrency(sale.totalAmount - ((sale as any).amountPaid ?? 0))}
-                  </p>
-                )}
-              </div>
-            ))}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

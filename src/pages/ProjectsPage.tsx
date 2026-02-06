@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, Search, Filter, MoreHorizontal } from 'lucide-react';
+import { Plus, Search, Filter, MoreHorizontal, ExternalLink, Star, Loader2 } from 'lucide-react';
 import { useProject } from '@/contexts/ProjectContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
@@ -8,6 +8,12 @@ import { db } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import { formatDate } from '@/lib/dateUtils';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 export default function ProjectsPage() {
   const { user } = useAuth();
@@ -91,11 +97,17 @@ export default function ProjectsPage() {
 
       {/* Projects Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {visibleProjects.map((project) => (
+        {visibleProjects.map((project) => {
+          const isCreating = (project as Project & { setupComplete?: boolean }).setupComplete === false;
+          return (
           <div
             key={project.id}
-            className="fv-card hover:shadow-card-hover transition-shadow flex flex-col justify-between cursor-pointer"
+            className={cn(
+              'fv-card transition-shadow flex flex-col justify-between',
+              isCreating ? 'cursor-wait opacity-90' : 'hover:shadow-card-hover cursor-pointer'
+            )}
             onClick={() => {
+              if (isCreating) return;
               setActiveProject(project);
               navigate(`/projects/${project.id}`);
             }}
@@ -110,9 +122,16 @@ export default function ProjectsPage() {
                   </p>
                 </div>
               </div>
-              <span className={cn('fv-badge capitalize', getStatusBadge(project.status))}>
-                {project.status}
-              </span>
+              {isCreating ? (
+                <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Creating project…
+                </span>
+              ) : (
+                <span className={cn('fv-badge capitalize', getStatusBadge(project.status))}>
+                  {project.status}
+                </span>
+              )}
             </div>
 
             <div className="space-y-3">
@@ -136,22 +155,41 @@ export default function ProjectsPage() {
                   Started {formatDate(project.startDate)}
                 </span>
               </div>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  className="p-1.5 hover:bg-muted rounded-lg transition-colors"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setActiveProject(project);
-                    navigate(`/projects/${project.id}`);
-                  }}
-                >
-                  <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
-                </button>
+              <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="p-1.5 hover:bg-muted rounded-lg transition-colors"
+                    >
+                      <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      onClick={() => {
+                        setActiveProject(project);
+                        navigate(`/projects/${project.id}`);
+                      }}
+                    >
+                      <ExternalLink className="mr-2 h-4 w-4" />
+                      View project
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      onClick={() => setActiveProject(project)}
+                    >
+                      <Star className="mr-2 h-4 w-4" />
+                      Set as active project
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

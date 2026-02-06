@@ -44,6 +44,8 @@ export interface Project {
   // Optional planning metadata
   seedVariety?: string;
   planNotes?: string;
+  /** When false, project doc exists but stages are still being created; show "Creating project..." on list. */
+  setupComplete?: boolean;
   planning?: {
     seed?: {
       name: string;
@@ -451,4 +453,30 @@ export interface NavItem {
   href: string;
   icon: string;
   badge?: string | number;
+}
+
+// --- Code Red (urgent developer–admin communication, e.g. data recovery) ---
+
+export type CodeRedStatus = 'open' | 'resolved';
+
+export interface CodeRedRequest {
+  id: string;
+  companyId: string;
+  companyName: string;
+  requestedBy: string;   // userId
+  requestedByName: string;
+  requestedByEmail: string;
+  message: string;
+  status: CodeRedStatus;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CodeRedMessage {
+  id: string;
+  from: string;       // userId
+  fromName: string;
+  fromRole: string;   // 'developer' | 'company-admin' etc.
+  body: string;
+  createdAt: Date;
 }

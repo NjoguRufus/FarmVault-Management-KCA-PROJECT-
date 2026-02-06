@@ -252,34 +252,43 @@ export default function ProjectDetailsPage() {
         {/* Project summary strip */}
         <div className="fv-card flex flex-col gap-4">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-foreground">{project.name}</h1>
-              <span className="fv-badge capitalize">
-                {project.cropType.replace('-', ' ')}
-              </span>
-              <span className="fv-badge capitalize">
-                {project.status}
-              </span>
-            </div>
-            <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground mt-2">
-              {project.plantingDate && (
-                <span className="flex items-center gap-1">
-                  <CalendarIcon className="h-4 w-4" />
-                  Planted{' '}
-                  {formatDate(project.plantingDate)}
+            <div>
+              <div className="flex items-center gap-3">
+                <h1 className="text-2xl font-bold text-foreground">{project.name}</h1>
+                <span className="fv-badge capitalize">
+                  {project.cropType.replace('-', ' ')}
                 </span>
-              )}
-              {expectedHarvestDate && (
-                <span className="flex items-center gap-1">
-                  <CalendarIcon className="h-4 w-4" />
-                  Expected harvest{' '}
-                  {formatDate(expectedHarvestDate)}
+                <span className="fv-badge capitalize">
+                  {project.status}
                 </span>
-              )}
+              </div>
+              <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground mt-2">
+                {project.plantingDate && (
+                  <span className="flex items-center gap-1">
+                    <CalendarIcon className="h-4 w-4" />
+                    Planted{' '}
+                    {formatDate(project.plantingDate)}
+                  </span>
+                )}
+                {expectedHarvestDate && (
+                  <span className="flex items-center gap-1">
+                    <CalendarIcon className="h-4 w-4" />
+                    Expected harvest{' '}
+                    {formatDate(expectedHarvestDate)}
+                  </span>
+                )}
+              </div>
             </div>
-          </div>
-
+            {project.status === 'active' && (
+              <div className="flex items-center gap-2">
+                <button
+                  className="fv-btn fv-btn--primary"
+                  onClick={() => navigate(`/projects/${project.id}/planning`)}
+                >
+                  {project.planning ? 'Plan changes' : 'Plan season'}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Metrics cards */}
@@ -322,7 +331,9 @@ export default function ProjectDetailsPage() {
                     const start = normalizeDate(stage.startDate as any) || null;
                     const end = normalizeDate(stage.endDate as any) || null;
             let derivedStatus: 'pending' | 'active' | 'completed' = 'pending';
-            if (start && end) {
+            if ((stage as CropStage).status === 'completed') {
+              derivedStatus = 'completed';
+            } else if (start && end) {
               if (today < start) derivedStatus = 'pending';
               else if (today > end) derivedStatus = 'completed';
               else derivedStatus = 'active';
@@ -380,7 +391,7 @@ export default function ProjectDetailsPage() {
       </div>
 
       {/* 3️⃣ Season Challenges */}
-      <div className="space-y-4">
+            <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Season Challenges</h2>
         </div>

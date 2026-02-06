@@ -19,6 +19,7 @@ interface ActivityChartProps {
 }
 
 export function ActivityChart({ data }: ActivityChartProps) {
+  const hasData = data.length > 0 && data.some((d) => d.expenses > 0 || d.sales > 0);
   return (
     <div className="fv-card">
       <div className="flex items-center justify-between mb-6">
@@ -34,6 +35,11 @@ export function ActivityChart({ data }: ActivityChartProps) {
           </div>
         </div>
       </div>
+      {!hasData ? (
+        <div className="h-72 flex items-center justify-center text-sm text-muted-foreground">
+          No activity in the last 6 months
+        </div>
+      ) : (
       <div className="h-72">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data} barGap={8}>
@@ -74,6 +80,7 @@ export function ActivityChart({ data }: ActivityChartProps) {
           </BarChart>
         </ResponsiveContainer>
       </div>
+      )}
     </div>
   );
 }

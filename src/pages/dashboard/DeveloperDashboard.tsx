@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Building2, Users, DollarSign, TrendingUp } from 'lucide-react';
 import { StatCard } from '@/components/dashboard/StatCard';
 import { CompaniesTable } from '@/components/dashboard/CompaniesTable';
@@ -8,6 +9,7 @@ import { useCollection } from '@/hooks/useCollection';
 import { Company } from '@/types';
 
 export function DeveloperDashboard() {
+  const navigate = useNavigate();
   const { data: companies = [], isLoading } = useCollection<Company>('companies', 'companies');
   const totalUsers = companies.reduce((sum, c) => sum + (c.userCount ?? 0), 0);
   const totalRevenue = companies.reduce((sum, c) => sum + (c.revenue ?? 0), 0);
@@ -24,7 +26,11 @@ export function DeveloperDashboard() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="fv-btn fv-btn--primary">
+          <button
+            type="button"
+            onClick={() => navigate('/admin/companies')}
+            className="fv-btn fv-btn--primary"
+          >
             <Building2 className="h-4 w-4" />
             Add Company
           </button>

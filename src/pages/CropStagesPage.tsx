@@ -110,18 +110,6 @@ export default function CropStagesPage() {
 
   const stages = allExpectedStages;
 
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return <CheckCircle className="h-5 w-5 text-fv-success" />;
-      case 'in-progress':
-        return <Clock className="h-5 w-5 text-fv-warning" />;
-      default:
-        return <AlertCircle className="h-5 w-5 text-muted-foreground" />;
-    }
-  };
-
   const getStatusBadge = (startDate?: any, endDate?: any) => {
     const start = toDate(startDate);
     const end = toDate(endDate);
@@ -140,6 +128,32 @@ export default function CropStagesPage() {
     if (today < start) return 'pending';
     if (today > end) return 'completed';
     return 'in-progress';
+  };
+
+  // Current stage = first that is not completed (by stored status or dates). All previous stages show as complete.
+  const currentStageIndex = useMemo(() => {
+    const sorted = [...stages].sort((a, b) => (a.stageIndex ?? 0) - (b.stageIndex ?? 0));
+    const idx = sorted.findIndex(
+      (s) => s.status !== 'completed' && getDerivedStatus(s.startDate, s.endDate) !== 'completed'
+    );
+    return idx === -1 ? sorted.length : sorted[idx].stageIndex ?? idx;
+  }, [stages]);
+
+  const getDisplayStatus = (stage: CropStage): 'pending' | 'in-progress' | 'completed' => {
+    if (stage.status === 'completed') return 'completed';
+    if ((stage.stageIndex ?? 0) < currentStageIndex) return 'completed';
+    return getDerivedStatus(stage.startDate, stage.endDate);
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return <CheckCircle className="h-5 w-5 text-fv-success" />;
+      case 'in-progress':
+        return <Clock className="h-5 w-5 text-fv-warning" />;
+      default:
+        return <AlertCircle className="h-5 w-5 text-muted-foreground" />;
+    }
   };
 
   const getChallengeTypeIcon = (type: ChallengeType) => {
@@ -167,6 +181,37 @@ export default function CropStagesPage() {
         status: 'completed',
         updatedAt: serverTimestamp(),
       });
+
+      // Start the next stage automatically (current becomes next)
+      const nextStageIndex = selectedStage.stageIndex + 1;
+      const nextStage = projectStages.find((s) => s.stageIndex === nextStageIndex);
+      const stageDefs = getCropStages(activeProject.cropType);
+      const nextDef = stageDefs.find((d) => d.order === nextStageIndex);
+
+      if (nextDef) {
+        const endDate = addDays(today, nextDef.expectedDurationDays);
+        if (nextStage && !nextStage.id.startsWith('placeholder-')) {
+          await updateDoc(doc(db, 'projectStages', nextStage.id), {
+            startDate: today,
+            endDate,
+            status: 'in-progress',
+            updatedAt: serverTimestamp(),
+          });
+        } else {
+          await addDoc(collection(db, 'projectStages'), {
+            projectId: activeProject.id,
+            companyId: activeProject.companyId,
+            cropType: activeProject.cropType,
+            stageName: nextDef.name,
+            stageIndex: nextDef.order,
+            startDate: today,
+            endDate,
+            status: 'in-progress',
+            createdAt: serverTimestamp(),
+          });
+        }
+      }
+
       queryClient.invalidateQueries({ queryKey: ['projectStages'] });
       setDetailsOpen(false);
     } catch (error) {
@@ -226,19 +271,19 @@ export default function CropStagesPage() {
       <div className="grid grid-cols-3 gap-2 sm:gap-3">
         <SimpleStatCard
           title="Completed"
-          value={stages.filter(s => getDerivedStatus(s.startDate, s.endDate) === 'completed').length}
+          value={stages.filter(s => getDisplayStatus(s) === 'completed').length}
           icon={CheckCircle}
           iconVariant="success"
         />
         <SimpleStatCard
           title="In Progress"
-          value={stages.filter(s => getDerivedStatus(s.startDate, s.endDate) === 'in-progress').length}
+          value={stages.filter(s => getDisplayStatus(s) === 'in-progress').length}
           icon={Clock}
           iconVariant="warning"
         />
         <SimpleStatCard
           title="Pending"
-          value={stages.filter(s => getDerivedStatus(s.startDate, s.endDate) === 'pending').length}
+          value={stages.filter(s => getDisplayStatus(s) === 'pending').length}
           icon={AlertCircle}
           iconVariant="muted"
         />
@@ -258,7 +303,7 @@ export default function CropStagesPage() {
           {stages
             .sort((a, b) => (a.stageIndex ?? 0) - (b.stageIndex ?? 0))
             .map((stage, index) => {
-              const status = getDerivedStatus(stage.startDate, stage.endDate);
+              const status = getDisplayStatus(stage);
               return (
               <div
                 key={stage.id}
@@ -290,7 +335,12 @@ export default function CropStagesPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between mb-1">
                     <h4 className="font-medium text-foreground">{stage.stageName || `Stage ${stage.stageIndex}`}</h4>
-                    <span className={cn('fv-badge capitalize', getStatusBadge(stage.startDate, stage.endDate))}>
+                    <span className={cn(
+                        'fv-badge capitalize',
+                        status === 'completed' && 'fv-badge--active',
+                        status === 'in-progress' && 'fv-badge--warning',
+                        status === 'pending' && 'bg-muted text-muted-foreground'
+                      )}>
                       {status.replace('-', ' ')}
                     </span>
                   </div>
@@ -353,7 +403,7 @@ export default function CropStagesPage() {
             <div className="space-y-6">
               {/* Stage Actions */}
               <div className="flex flex-wrap gap-2 pb-4 border-b">
-                {getDerivedStatus(selectedStage.startDate, selectedStage.endDate) !== 'completed' && 
+                {getDisplayStatus(selectedStage) !== 'completed' && 
                  !selectedStage.id?.startsWith('placeholder-') && (
                   <button
                     onClick={handleMarkStageComplete}
@@ -377,8 +427,13 @@ export default function CropStagesPage() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Status</p>
-                  <span className={cn('fv-badge capitalize', getStatusBadge(selectedStage.startDate, selectedStage.endDate))}>
-                    {getDerivedStatus(selectedStage.startDate, selectedStage.endDate).replace('-', ' ')}
+                  <span className={cn(
+                    'fv-badge capitalize',
+                    getDisplayStatus(selectedStage) === 'completed' && 'fv-badge--active',
+                    getDisplayStatus(selectedStage) === 'in-progress' && 'fv-badge--warning',
+                    getDisplayStatus(selectedStage) === 'pending' && 'bg-muted text-muted-foreground'
+                  )}>
+                    {getDisplayStatus(selectedStage).replace('-', ' ')}
                   </span>
                 </div>
                 {(() => {
