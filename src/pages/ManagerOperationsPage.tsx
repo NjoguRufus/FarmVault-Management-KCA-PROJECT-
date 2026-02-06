@@ -1461,34 +1461,21 @@ export default function ManagerOperationsPage() {
                 <label className="text-xs text-muted-foreground mb-1 block">
                   Work Type
                 </label>
-                <div className="flex gap-2">
-                  <div className="w-1/2">
-                    <Select
-                      value={formWorkType}
-                      onValueChange={(val) => setFormWorkType(val)}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select work type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {WORK_TYPES.map((wt) => (
-                          <SelectItem key={wt} value={wt}>
-                            {wt}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="w-1/2">
-                    <input
-                      type="text"
-                      className="fv-input w-full"
-                      placeholder="Or type work type"
-                      value={formWorkType}
-                      onChange={(e) => setFormWorkType(e.target.value)}
-                    />
-                  </div>
-                </div>
+                <Select
+                  value={formWorkType}
+                  onValueChange={(val) => setFormWorkType(val)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select work type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {WORK_TYPES.map((wt) => (
+                      <SelectItem key={wt} value={wt}>
+                        {wt}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -1703,6 +1690,11 @@ export default function ManagerOperationsPage() {
             <DialogTitle>Log Daily Work</DialogTitle>
             <DialogDescription>
               Create a new work log entry. You will be automatically assigned as the manager.
+              {currentStage && (
+                <span className="block mt-2 text-foreground font-medium">
+                  Current stage: {currentStage.stageName}
+                </span>
+              )}
             </DialogDescription>
           </DialogHeader>
           {activeProject && (
@@ -1730,9 +1722,8 @@ export default function ManagerOperationsPage() {
                   <label className="text-xs text-muted-foreground mb-1 block">
                     Work Type <span className="text-destructive">*</span>
                   </label>
-                  <div className="flex gap-2">
-                    <Select value={logWorkType} onValueChange={handleChangeLogWorkType}>
-                      <SelectTrigger className="flex-1">
+                  <Select value={logWorkType} onValueChange={handleChangeLogWorkType}>
+                      <SelectTrigger className="w-full">
                         <SelectValue placeholder="Select work type" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1743,16 +1734,6 @@ export default function ManagerOperationsPage() {
                         ))}
                       </SelectContent>
                     </Select>
-                    {logWorkType === 'Other' && (
-                      <input
-                        type="text"
-                        className="fv-input flex-1"
-                        placeholder="Specify work type"
-                        value={logWorkType}
-                        onChange={(e) => setLogWorkType(e.target.value)}
-                      />
-                    )}
-                  </div>
                 </div>
               </div>
 

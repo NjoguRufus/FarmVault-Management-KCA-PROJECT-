@@ -127,7 +127,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
       )}
       <aside
         className={cn(
-          'fixed left-0 top-0 z-40 h-screen transition-all duration-300 fv-sidebar',
+          'fixed left-0 top-0 z-40 flex h-screen flex-col transition-all duration-300 fv-sidebar',
           // On mobile: overlay behavior - slide in/out
           // On desktop: always visible, just changes width
           collapsed 
@@ -139,7 +139,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
         }}
       >
       {/* Logo Section */}
-      <div className="flex h-16 items-center justify-between px-4 border-b border-sidebar-border/30">
+      <div className="flex h-16 shrink-0 items-center justify-between px-4 border-b border-sidebar-border/30">
         <div className="flex items-center gap-3">
           <img
             src="/Logo/FarmVault_Logo dark mode.png"
@@ -156,7 +156,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-4 px-3 scrollbar-thin">
+      <nav className="min-h-0 flex-1 overflow-y-auto py-4 px-3 scrollbar-thin">
         <ul className="space-y-1">
           {navItems.map((item) => {
             const normalizedPath = location.pathname.replace(/\/+/g, '/');
@@ -185,7 +185,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
 
       {/* User Section */}
       {!collapsed && user && (
-        <div className="border-t border-sidebar-border/30 p-4">
+        <div className="shrink-0 border-t border-sidebar-border/30 p-4">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-full bg-sidebar-accent text-sidebar-foreground font-medium text-sm">
               {user.name.charAt(0)}

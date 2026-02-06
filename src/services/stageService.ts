@@ -2,39 +2,43 @@ import { CropStage, CropType } from '@/types';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
+/** Derive display status: respect stored status first, then dates (aligned with CropStagesPage). */
+function getDerivedStatus(
+  stage: CropStage,
+  today: Date,
+): 'pending' | 'in-progress' | 'completed' {
+  if (stage.status === 'completed') return 'completed';
+  const start = stage.startDate ? new Date(stage.startDate) : undefined;
+  const end = stage.endDate ? new Date(stage.endDate) : undefined;
+  if (!start || !end) return 'pending';
+  if (today < start) return 'pending';
+  if (today > end) return 'completed';
+  return 'in-progress';
+}
+
+/** Returns the current crop stage for the project (first non-completed), aligned with CropStagesPage. */
 export function getCurrentStageForProject(
   stages: CropStage[],
 ): { stageIndex: number; stageName: string } | null {
   if (!stages.length) return null;
 
   const today = new Date();
-  const withStatus = stages.map((s) => {
-    const start = s.startDate ? new Date(s.startDate) : undefined;
-    const end = s.endDate ? new Date(s.endDate) : undefined;
-    let status: 'pending' | 'in-progress' | 'completed' = 'pending';
-    if (start && end) {
-      if (today < start) status = 'pending';
-      else if (today > end) status = 'completed';
-      else status = 'in-progress';
-    }
-    return { ...s, status };
-  });
+  const sorted = [...stages].sort((a, b) => (a.stageIndex ?? 0) - (b.stageIndex ?? 0));
 
-  const inProgress = withStatus.find((s) => s.status === 'in-progress');
-  if (inProgress) {
-    return { stageIndex: inProgress.stageIndex, stageName: inProgress.stageName };
+  const firstNonCompleted = sorted.find(
+    (s) => getDerivedStatus(s, today) !== 'completed',
+  );
+  if (firstNonCompleted) {
+    return {
+      stageIndex: firstNonCompleted.stageIndex ?? 0,
+      stageName: firstNonCompleted.stageName ?? `Stage ${firstNonCompleted.stageIndex}`,
+    };
   }
 
-  const completed = withStatus
-    .filter((s) => s.status === 'completed')
-    .sort((a, b) => a.stageIndex - b.stageIndex);
-  if (completed.length) {
-    const last = completed[completed.length - 1];
-    return { stageIndex: last.stageIndex, stageName: last.stageName };
-  }
-
-  const earliest = withStatus.sort((a, b) => a.stageIndex - b.stageIndex)[0];
-  return { stageIndex: earliest.stageIndex, stageName: earliest.stageName };
+  const last = sorted[sorted.length - 1];
+  return last
+    ? { stageIndex: last.stageIndex ?? 0, stageName: last.stageName ?? `Stage ${last.stageIndex}` }
+    : null;
 }
 
 export async function fetchProjectStages(companyId: string, projectId: string, cropType: CropType) {

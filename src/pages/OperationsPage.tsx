@@ -126,6 +126,8 @@ export default function OperationsPage() {
   }, [date]);
   const [notes, setNotes] = useState('');
   const [changeReason, setChangeReason] = useState('');
+
+  const WORK_TYPES = ['Spraying', 'Fertilizer application', 'Watering', 'Weeding', 'Other'];
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [markingPaid, setMarkingPaid] = useState(false);
@@ -799,38 +801,24 @@ export default function OperationsPage() {
                   </div>
                   <div className="space-y-1">
                     <label className="text-sm font-medium text-foreground">Work type</label>
-                    <div className="flex gap-2">
-                      <div className="w-1/2">
-                        <Select
-                          value={workType}
-                          onValueChange={(val) => setWorkType(val)}
-                        >
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select work type" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Spraying">Spraying</SelectItem>
-                            <SelectItem value="Fertilizer application">
-                              Fertilizer application
-                            </SelectItem>
-                            <SelectItem value="Watering">Watering</SelectItem>
-                            <SelectItem value="Weeding">Weeding</SelectItem>
-                            <SelectItem value="Add new work type">
-                              Add new work type
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="w-1/2">
-                        <input
-                          className="fv-input"
-                          value={workCategory}
-                          onChange={(e) => setWorkCategory(e.target.value)}
-                          required
-                          placeholder="Type or refine work name"
-                        />
-                      </div>
-                    </div>
+                    <Select
+                      value={workType}
+                      onValueChange={(val) => {
+                        setWorkType(val);
+                        setWorkCategory(val);
+                      }}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select work type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {WORK_TYPES.map((wt) => (
+                          <SelectItem key={wt} value={wt}>
+                            {wt}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-1">
                     <label className="text-sm font-medium text-foreground">Number of people</label>
@@ -872,16 +860,6 @@ export default function OperationsPage() {
                     rows={3}
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-foreground">Reason for Change (if changing work mid-way)</label>
-                  <textarea
-                    className="fv-input resize-none"
-                    rows={2}
-                    value={changeReason}
-                    onChange={(e) => setChangeReason(e.target.value)}
-                    placeholder="Optional: Explain why the work plan is being changed..."
                   />
                 </div>
 
@@ -1403,7 +1381,9 @@ export default function OperationsPage() {
                         date: selectedLog.date,
                       });
                       // Populate form with current values
-                      setWorkCategory(selectedLog.workCategory);
+                      const wt = selectedLog.workType || selectedLog.workCategory || '';
+                      setWorkType(wt);
+                      setWorkCategory(wt);
                       setNumberOfPeople(String(selectedLog.numberOfPeople));
                       setRatePerPerson(selectedLog.ratePerPerson ? String(selectedLog.ratePerPerson) : '');
                       setNotes(selectedLog.notes || '');
@@ -1587,13 +1567,24 @@ export default function OperationsPage() {
                   </div>
                   <div className="space-y-1">
                     <label className="text-sm font-medium text-foreground">Work type</label>
-                    <input
-                      className="fv-input"
-                      value={workCategory}
-                      onChange={(e) => setWorkCategory(e.target.value)}
-                      required
-                      placeholder="Spraying, Fertilizer application, Watering..."
-                    />
+                    <Select
+                      value={workType}
+                      onValueChange={(val) => {
+                        setWorkType(val);
+                        setWorkCategory(val);
+                      }}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select work type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {[...new Set([...WORK_TYPES, workType].filter(Boolean))].map((wt) => (
+                          <SelectItem key={wt} value={wt}>
+                            {wt}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-1">
                     <label className="text-sm font-medium text-foreground">Number of people</label>

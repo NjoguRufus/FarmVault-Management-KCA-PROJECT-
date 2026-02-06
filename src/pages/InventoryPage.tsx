@@ -36,6 +36,7 @@ import {
 export default function InventoryPage() {
   const { activeProject } = useProject();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const { data: allInventory = [], isLoading } = useCollection<InventoryItem>('inventoryItems', 'inventoryItems');
   const { data: suppliers = [] } = useCollection<Supplier>('suppliers', 'suppliers');
   const { data: neededItems = [] } = useCollection<NeededItem>('neededItems', 'neededItems');
@@ -216,18 +217,22 @@ export default function InventoryPage() {
         finalCategory = normalizedName;
       }
       
-      const data: any = {
+      const data: Record<string, unknown> = {
         name,
         category: finalCategory,
         quantity: Number(quantity || '0'),
         unit,
         pricePerUnit: Number(pricePerUnit || '0'),
         companyId: activeProject.companyId,
-        supplierId: selectedSupplierId || undefined,
-        supplierName: suppliers.find((s) => s.id === selectedSupplierId)?.name,
         lastUpdated: serverTimestamp(),
         createdAt: serverTimestamp(),
       };
+
+      if (selectedSupplierId) {
+        data.supplierId = selectedSupplierId;
+        const supplier = suppliers.find((s) => s.id === selectedSupplierId);
+        if (supplier?.name) data.supplierName = supplier.name;
+      }
 
       if (selectedCrops.length) {
         data.cropTypes = selectedCrops;
@@ -241,33 +246,27 @@ export default function InventoryPage() {
 
       if (countAsExpense) {
         const amount = Number(quantity || '0') * Number(pricePerUnit || '0');
-        if (amount > 0) {
-          const categoryMap: Record<string, ExpenseCategory> = {
-            fertilizer: 'fertilizer',
-            chemical: 'chemical',
-            diesel: 'fuel',
-            materials: 'other',
-          };
-
-          await addDoc(collection(db, 'expenses'), {
-            companyId: activeProject.companyId,
-            projectId: activeProject.id,
-            cropType: activeProject.cropType,
-            category: categoryMap[finalCategory] || 'other',
-            description: `Initial stock - ${name} (${quantity} ${unit})`,
-            amount,
-            date: serverTimestamp(),
-            // Optional linkage fields (stage*, syncedFromWorkLogId, paidAt, etc.)
-            // are intentionally omitted here when unknown to avoid sending `undefined`.
-            synced: false,
-            paid: false,
-            createdAt: serverTimestamp(),
-          });
-          
-          // Invalidate expenses query
-          queryClient.invalidateQueries({ queryKey: ['expenses'] });
-          queryClient.invalidateQueries({ queryKey: ['dashboard-expenses'] });
-        }
+        const categoryMap: Record<string, ExpenseCategory> = {
+          fertilizer: 'fertilizer',
+          chemical: 'chemical',
+          diesel: 'fuel',
+          materials: 'other',
+        };
+        const expenseData: Record<string, unknown> = {
+          companyId: activeProject.companyId,
+          projectId: activeProject.id,
+          category: categoryMap[finalCategory] || 'other',
+          description: `Initial stock - ${name} (${quantity} ${unit})`,
+          amount,
+          date: serverTimestamp(),
+          synced: false,
+          paid: false,
+          createdAt: serverTimestamp(),
+        };
+        if (activeProject.cropType) expenseData.cropType = activeProject.cropType;
+        await addDoc(collection(db, 'expenses'), expenseData);
+        queryClient.invalidateQueries({ queryKey: ['expenses'] });
+        queryClient.invalidateQueries({ queryKey: ['dashboard-expenses'] });
       }
 
       setName('');
@@ -310,18 +309,18 @@ export default function InventoryPage() {
       });
 
       const purchaseRef = doc(collection(db, 'inventoryPurchases'));
-      batch.set(purchaseRef, {
+      const purchaseData: Record<string, unknown> = {
         companyId: restockItem.companyId,
         inventoryItemId: restockItem.id,
         quantityAdded: qty,
         unit: restockItem.unit,
         totalCost: total,
-        pricePerUnit: qty ? total / qty : undefined,
         projectId: activeProject.id,
         date: serverTimestamp(),
-        expenseId: null,
         createdAt: serverTimestamp(),
-      });
+      };
+      if (qty) purchaseData.pricePerUnit = total / qty;
+      batch.set(purchaseRef, purchaseData);
 
       const categoryMap: Record<InventoryCategory, ExpenseCategory> = {
         fertilizer: 'fertilizer',

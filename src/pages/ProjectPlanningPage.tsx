@@ -20,6 +20,13 @@ import { db } from '@/lib/firebase';
 import { CropStage, Project } from '@/types';
 import { useProjectStages } from '@/hooks/useProjectStages';
 import { generateStageTimeline } from '@/lib/cropStageConfig';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
 
 export default function ProjectPlanningPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -60,6 +67,7 @@ export default function ProjectPlanningPage() {
   const [plantingDateInput, setPlantingDateInput] = useState<string>('');
   const [plantingReason, setPlantingReason] = useState('');
   const [savingPlanting, setSavingPlanting] = useState(false);
+  const [changePlantingModalOpen, setChangePlantingModalOpen] = useState(false);
 
   const seed = project?.planning?.seed;
   const [seedName, setSeedName] = useState(seed?.name ?? '');
@@ -68,6 +76,7 @@ export default function ProjectPlanningPage() {
   const [seedBatch, setSeedBatch] = useState(seed?.batchNumber ?? '');
   const [seedReason, setSeedReason] = useState('');
   const [savingSeed, setSavingSeed] = useState(false);
+  const [changeSeedModalOpen, setChangeSeedModalOpen] = useState(false);
 
   const expectedChallenges = project?.planning?.expectedChallenges ?? [];
   const planHistory = project?.planning?.planHistory ?? [];
@@ -157,6 +166,7 @@ export default function ProjectPlanningPage() {
 
       await Promise.all([refetchProject(), refetchStages()]);
       setPlantingReason('');
+      setChangePlantingModalOpen(false);
     } finally {
       setSavingPlanting(false);
     }
@@ -206,6 +216,7 @@ export default function ProjectPlanningPage() {
       await updateDoc(projectRef, update);
       await refetchProject();
       setSeedReason('');
+      setChangeSeedModalOpen(false);
     } finally {
       setSavingSeed(false);
     }
@@ -333,7 +344,7 @@ export default function ProjectPlanningPage() {
               Plan and adjust the season start date. Any change is recorded as a change of plan and
               future stages are recalculated, while completed stages are preserved.
             </p>
-            <form onSubmit={handleSavePlantingDate} className="space-y-4">
+            <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-sm font-medium text-foreground">Current planting date</label>
@@ -347,32 +358,77 @@ export default function ProjectPlanningPage() {
                   <input
                     type="date"
                     className="fv-input"
+                    disabled={!canEdit}
                     value={plantingDateInput}
                     onChange={(e) => setPlantingDateInput(e.target.value)}
                   />
                 </div>
               </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium text-foreground">Reason for change</label>
-                <textarea
-                  className="fv-input resize-none"
-                  rows={3}
-                  disabled={!canEdit}
-                  value={plantingReason}
-                  onChange={(e) => setPlantingReason(e.target.value)}
-                  placeholder="E.g. delayed rains, seed delivery delay, field not ready..."
-                />
-              </div>
               <div className="flex justify-end">
                 <button
-                  type="submit"
-                  className="fv-btn fv-btn--primary"
-                  disabled={savingPlanting}
+                  type="button"
+                  className="fv-btn fv-btn--secondary"
+                  disabled={!canEdit}
+                  onClick={() => setChangePlantingModalOpen(true)}
                 >
-                  {savingPlanting ? 'Saving…' : 'Save Change'}
+                  Change plan
                 </button>
               </div>
-            </form>
+            </div>
+
+            <Dialog open={changePlantingModalOpen} onOpenChange={setChangePlantingModalOpen}>
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Change planting plan</DialogTitle>
+                </DialogHeader>
+                <form
+                  onSubmit={(e) => {
+                    handleSavePlantingDate(e);
+                  }}
+                  className="space-y-4"
+                >
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-foreground">Planned planting date</label>
+                    <input
+                      type="date"
+                      className="fv-input w-full"
+                      value={plantingDateInput}
+                      onChange={(e) => setPlantingDateInput(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-foreground">Reason for change</label>
+                    <textarea
+                      className="fv-input w-full resize-none"
+                      rows={3}
+                      value={plantingReason}
+                      onChange={(e) => setPlantingReason(e.target.value)}
+                      placeholder="E.g. delayed rains, seed delivery delay, field not ready..."
+                      required
+                    />
+                  </div>
+                  <DialogFooter>
+                    <button
+                      type="button"
+                      className="fv-btn fv-btn--secondary"
+                      onClick={() => {
+                        setChangePlantingModalOpen(false);
+                        setPlantingReason('');
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="fv-btn fv-btn--primary"
+                      disabled={savingPlanting}
+                    >
+                      {savingPlanting ? 'Saving…' : 'Save Change'}
+                    </button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
           </div>
 
           {/* 2️⃣ Seed / Variety Planning */}
@@ -382,7 +438,7 @@ export default function ProjectPlanningPage() {
               Capture the exact seed, variety, supplier, and batch. This enables yield analysis and
               traceability across seasons.
             </p>
-            <form onSubmit={handleSaveSeed} className="space-y-4">
+            <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-sm font-medium text-foreground">Seed name</label>
@@ -426,27 +482,62 @@ export default function ProjectPlanningPage() {
                   />
                 </div>
               </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium text-foreground">Reason for change</label>
-                <textarea
-                  className="fv-input resize-none"
-                  rows={3}
-                  disabled={!canEdit}
-                  value={seedReason}
-                  onChange={(e) => setSeedReason(e.target.value)}
-                  placeholder="E.g. switching to disease-resistant variety, new supplier, trialing new hybrid..."
-                />
-              </div>
               <div className="flex justify-end">
                 <button
-                  type="submit"
-                  className="fv-btn fv-btn--primary"
-                  disabled={savingSeed}
+                  type="button"
+                  className="fv-btn fv-btn--secondary"
+                  disabled={!canEdit}
+                  onClick={() => setChangeSeedModalOpen(true)}
                 >
-                  {savingSeed ? 'Saving…' : 'Save Seed Plan'}
+                  Change plan
                 </button>
               </div>
-            </form>
+            </div>
+
+            <Dialog open={changeSeedModalOpen} onOpenChange={setChangeSeedModalOpen}>
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Change seed plan</DialogTitle>
+                </DialogHeader>
+                <form
+                  onSubmit={(e) => {
+                    handleSaveSeed(e);
+                  }}
+                  className="space-y-4"
+                >
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-foreground">Reason for change</label>
+                    <textarea
+                      className="fv-input w-full resize-none"
+                      rows={3}
+                      value={seedReason}
+                      onChange={(e) => setSeedReason(e.target.value)}
+                      placeholder="E.g. switching to disease-resistant variety, new supplier, trialing new hybrid..."
+                      required
+                    />
+                  </div>
+                  <DialogFooter>
+                    <button
+                      type="button"
+                      className="fv-btn fv-btn--secondary"
+                      onClick={() => {
+                        setChangeSeedModalOpen(false);
+                        setSeedReason('');
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="fv-btn fv-btn--primary"
+                      disabled={savingSeed}
+                    >
+                      {savingSeed ? 'Saving…' : 'Save Seed Plan'}
+                    </button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
           </div>
 
           {/* 3️⃣ Pre-season / planned challenges */}

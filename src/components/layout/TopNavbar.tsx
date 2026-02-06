@@ -29,9 +29,9 @@ export function TopNavbar({ sidebarCollapsed, onSidebarToggle }: TopNavbarProps)
   const companyProjects = user ? projects.filter(p => p.companyId === user.companyId) : [];
 
   const empRole = (user as any)?.employeeRole;
-  const isBroker = Boolean(
+  const isDriver = Boolean(
     user &&
-    (user.role === 'broker' || (user.role === 'employee' && (empRole === 'sales-broker' || empRole === 'broker')))
+    (user.role === 'driver' || (user.role === 'employee' && (empRole === 'logistics-driver' || empRole === 'driver')))
   );
 
   const getCropEmoji = (cropType: string) => {
@@ -73,10 +73,9 @@ export function TopNavbar({ sidebarCollapsed, onSidebarToggle }: TopNavbarProps)
             alt="FarmVault logo"
             className="h-8 w-auto rounded-md object-contain bg-sidebar-primary/10 p-1 md:hidden"
           />
-          {isBroker ? (
-            <div className="flex items-center gap-1.5 sm:gap-2 rounded-lg border border-border bg-background px-2 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm">
-              <span className="text-base sm:text-lg">🍅</span>
-              <span className="font-medium">Tomatoes</span>
+          {isDriver ? (
+            <div className="flex items-center gap-1.5 sm:gap-2 rounded-lg border border-border bg-muted/50 px-2 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm text-muted-foreground">
+              <span className="font-medium">Driver</span>
             </div>
           ) : (
           <DropdownMenu>
@@ -98,24 +97,28 @@ export function TopNavbar({ sidebarCollapsed, onSidebarToggle }: TopNavbarProps)
             <DropdownMenuContent align="start" className="w-72">
               <DropdownMenuLabel>Switch Project</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {companyProjects.map((project) => (
-                <DropdownMenuItem
-                  key={project.id}
-                  onClick={() => setActiveProject(project)}
-                  className={cn(
-                    'flex items-center gap-3 cursor-pointer',
-                    activeProject?.id === project.id && 'bg-muted'
-                  )}
-                >
-                  <span className="text-lg">{getCropEmoji(project.cropType)}</span>
-                  <div className="flex flex-col">
-                    <span className="font-medium">{project.name}</span>
-                    <span className="text-xs text-muted-foreground capitalize">
-                      {project.cropType.replace('-', ' ')} • {project.location}
-                    </span>
-                  </div>
-                </DropdownMenuItem>
-              ))}
+              {companyProjects.length === 0 ? (
+                <p className="px-2 py-3 text-xs text-muted-foreground">No projects in your company.</p>
+              ) : (
+                companyProjects.map((project) => (
+                  <DropdownMenuItem
+                    key={project.id}
+                    onClick={() => setActiveProject(project)}
+                    className={cn(
+                      'flex items-center gap-3 cursor-pointer',
+                      activeProject?.id === project.id && 'bg-muted'
+                    )}
+                  >
+                    <span className="text-lg">{getCropEmoji(project.cropType)}</span>
+                    <div className="flex flex-col">
+                      <span className="font-medium">{project.name}</span>
+                      <span className="text-xs text-muted-foreground capitalize">
+                        {project.cropType.replace('-', ' ')} • {project.location}
+                      </span>
+                    </div>
+                  </DropdownMenuItem>
+                ))
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
           )}

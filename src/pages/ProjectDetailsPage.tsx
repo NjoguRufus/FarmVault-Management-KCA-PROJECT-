@@ -1,19 +1,35 @@
 import React, { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { AlertTriangle, Calendar as CalendarIcon, ChevronLeft, Clock, Users, Activity, Wallet, ListChecks } from 'lucide-react';
+import { AlertTriangle, Calendar as CalendarIcon, ChevronLeft, Clock, Users, Activity, Wallet, ListChecks, Trash2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { doc, getDoc, collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { CropStage, Expense, InventoryUsage, Project, SeasonChallenge, WorkLog } from '@/types';
 import { useProjectStages } from '@/hooks/useProjectStages';
+import { useProject } from '@/contexts/ProjectContext';
+import { getCurrentStageForProject } from '@/services/stageService';
 import { toDate, formatDate } from '@/lib/dateUtils';
 import { SimpleStatCard } from '@/components/dashboard/SimpleStatCard';
+import { deleteProject } from '@/services/companyDataService';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 export default function ProjectDetailsPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { activeProject, setActiveProject } = useProject();
 
   const companyId = user?.companyId || null;
 
@@ -112,6 +128,7 @@ export default function ProjectDetailsPage() {
 
   const plantingDate = normalizeDate(project?.plantingDate as any);
 
+  // Real calendar days since planting (whole days)
   const daysSincePlanting =
     plantingDate
       ? Math.max(
@@ -123,22 +140,17 @@ export default function ProjectDetailsPage() {
         )
       : undefined;
 
+  // Current stage from real data: same logic as CropStagesPage (respects stored status + dates)
+  const currentStageResult = useMemo(
+    () => getCurrentStageForProject(stages),
+    [stages],
+  );
   const currentStage = useMemo(() => {
-    if (!sortedStages.length) return null;
-    const active = sortedStages.find((s) => {
-      if (!s.startDate || !s.endDate) return false;
-      const start = normalizeDate(s.startDate as any);
-      const end = normalizeDate(s.endDate as any);
-      if (!start || !end) return false;
-      return today >= start && today <= end;
-    });
-    if (active) return active;
-    const completed = sortedStages.filter((s) => s.endDate && today > new Date(s.endDate));
-    if (completed.length) {
-      return completed[completed.length - 1];
-    }
-    return sortedStages[0];
-  }, [sortedStages, today]);
+    if (!currentStageResult || !sortedStages.length) return null;
+    return (
+      sortedStages.find((s) => s.stageIndex === currentStageResult.stageIndex) ?? null
+    );
+  }, [currentStageResult, sortedStages]);
 
   const stageProgressPercent = useMemo(() => {
     if (!currentStage || !currentStage.startDate || !currentStage.endDate) return 0;
@@ -195,6 +207,7 @@ export default function ProjectDetailsPage() {
 
   const [mode, setMode] = useState<'overview' | 'planning'>('overview');
   const [savingPlan, setSavingPlan] = useState(false);
+  const [deletingProject, setDeletingProject] = useState(false);
 
   if (!companyId) {
     return (
@@ -295,7 +308,7 @@ export default function ProjectDetailsPage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 w-full">
             <SimpleStatCard
               title="Days since planting"
-              value={Number.isFinite(daysSincePlanting as any) ? daysSincePlanting : '—'}
+              value={typeof daysSincePlanting === 'number' ? Math.floor(daysSincePlanting) : '—'}
               layout="vertical"
             />
             <SimpleStatCard
@@ -620,6 +633,64 @@ export default function ProjectDetailsPage() {
           <Activity className="h-4 w-4" />
           View Inventory Usage
         </button>
+      </div>
+
+      {/* Delete project - bottom */}
+      <div className="fv-card border-destructive/30">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">Delete project</h3>
+            <p className="text-xs text-muted-foreground mt-1">
+              Permanently delete this project and all its stages, work logs, expenses, and season challenges. This cannot be undone.
+            </p>
+          </div>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <button
+                type="button"
+                className="fv-btn fv-btn--secondary text-destructive hover:bg-destructive/10 w-fit"
+                disabled={deletingProject}
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete project
+              </button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete this project?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will permanently delete the project and all its stages, work logs, expenses, and season challenges. This cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    if (!companyId || !project?.id) return;
+                    setDeletingProject(true);
+                    try {
+                      await deleteProject(companyId, project.id);
+                      if (activeProject?.id === project.id) {
+                        setActiveProject(null);
+                      }
+                      await queryClient.invalidateQueries({ queryKey: ['projects'] });
+                      navigate('/projects');
+                    } catch (err) {
+                      console.error('Failed to delete project:', err);
+                      alert('Failed to delete project. Please try again.');
+                    } finally {
+                      setDeletingProject(false);
+                    }
+                  }}
+                >
+                  {deletingProject ? 'Deleting…' : 'Delete'}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
       </div>
     </div>
   );

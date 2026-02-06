@@ -4,7 +4,7 @@ import { StatCard } from '@/components/dashboard/StatCard';
 import { ActivityChart } from '@/components/dashboard/ActivityChart';
 import { ExpensesPieChart } from '@/components/dashboard/ExpensesPieChart';
 import { ProjectsTable } from '@/components/dashboard/ProjectsTable';
-import { InventoryOverview, SalesOverview, CropStageProgress } from '@/components/dashboard/DashboardWidgets';
+import { InventoryOverview, RecentTransactions, RecentTransactionItem, CropStageSection } from '@/components/dashboard/DashboardWidgets';
 import { InventoryItem, CropStage } from '@/types';
 import { useProject } from '@/contexts/ProjectContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -111,6 +111,33 @@ export function CompanyDashboard() {
   // Calculate total budget from filtered projects
   const totalBudget = filteredProjects.reduce((sum, p) => sum + (p.budget || 0), 0);
   const remainingBudget = totalBudget - totalExpenses;
+
+    // Recent transactions: merge sales and expenses, sort by date desc (real data)
+  const recentTransactions = React.useMemo((): RecentTransactionItem[] => {
+    const items: RecentTransactionItem[] = [];
+    filteredSales.forEach((s) => {
+      const d = toDate(s.date);
+      items.push({
+        id: `sale-${s.id}`,
+        type: 'sale',
+        date: d || new Date(),
+        label: s.buyerName || 'Sale',
+        amount: s.totalAmount,
+        status: s.status,
+      });
+    });
+    filteredExpenses.forEach((e) => {
+      const d = toDate(e.date);
+      items.push({
+        id: `expense-${e.id}`,
+        type: 'expense',
+        date: d || new Date(),
+        label: e.description || e.category || 'Expense',
+        amount: e.amount,
+      });
+    });
+    return items.sort((a, b) => b.date.getTime() - a.date.getTime()).slice(0, 15);
+  }, [filteredSales, filteredExpenses]);
 
   const expensesByCategory = Object.values(
     filteredExpenses.reduce<Record<string, number>>((acc, e) => {
@@ -234,9 +261,9 @@ export function CompanyDashboard() {
 
       {/* Bottom Widgets */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <CropStageProgress stages={activeProject ? activeProjectStages : filteredStages} />
+        <CropStageSection stages={activeProject ? activeProjectStages : filteredStages} />
         <InventoryOverview inventoryItems={filteredInventory} />
-        <SalesOverview />
+        <RecentTransactions transactions={recentTransactions} />
       </div>
 
       {/* Projects Table */}
