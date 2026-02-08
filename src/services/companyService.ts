@@ -52,7 +52,13 @@ export async function setCompanyNextPayment(companyId: string, nextPaymentAt: Da
 
 export async function updateCompany(
   companyId: string,
-  data: { name?: string; email?: string; plan?: string; status?: string }
+  data: {
+    name?: string;
+    email?: string;
+    plan?: string;
+    status?: string;
+    customWorkTypes?: string[];
+  }
 ): Promise<void> {
   const ref = doc(db, 'companies', companyId);
   const updates: Record<string, unknown> = {};
@@ -60,6 +66,7 @@ export async function updateCompany(
   if (data.email !== undefined) updates.email = data.email;
   if (data.plan !== undefined) updates.plan = data.plan;
   if (data.status !== undefined) updates.status = data.status;
+  if (data.customWorkTypes !== undefined) updates.customWorkTypes = data.customWorkTypes;
   if (Object.keys(updates).length === 0) return;
   await updateDoc(ref, updates);
 }

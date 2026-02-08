@@ -36,3 +36,30 @@ const EXPENSE_CATEGORY_LABELS: Record<string, string> = {
 export function getExpenseCategoryLabel(category: string): string {
   return EXPENSE_CATEGORY_LABELS[category] ?? category.replace(/_/g, " ");
 }
+
+/**
+ * Parses a quantity string that may be a number, decimal, or fraction (e.g. "1/2", "1/4", "1 1/2").
+ * Used for inventory deduction and work log inputs so small amounts like ½ or 0.25 are supported.
+ */
+export function parseQuantityOrFraction(str: string): number {
+  const s = String(str ?? "").trim();
+  if (!s) return 0;
+  // "a b/c" e.g. "1 1/2" -> a + b/c
+  const mixed = s.match(/^\s*(\d+)\s+(\d+)\s*\/\s*(\d+)\s*$/);
+  if (mixed) {
+    const a = Number(mixed[1]);
+    const b = Number(mixed[2]);
+    const c = Number(mixed[3]);
+    if (c !== 0 && Number.isFinite(a) && Number.isFinite(b) && Number.isFinite(c))
+      return a + b / c;
+  }
+  // "a/b" e.g. "1/2", "1/4"
+  const frac = s.match(/^\s*(\d+)\s*\/\s*(\d+)\s*$/);
+  if (frac) {
+    const num = Number(frac[1]);
+    const den = Number(frac[2]);
+    if (den !== 0 && Number.isFinite(num) && Number.isFinite(den)) return num / den;
+  }
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
+}

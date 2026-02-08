@@ -5,13 +5,14 @@ import { cn } from '@/lib/utils';
 import { db } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
 import { useCollection } from '@/hooks/useCollection';
-import { WorkLog, Employee, CropStage, InventoryItem, InventoryCategory, InventoryCategoryItem, User, Expense, ExpenseCategory } from '@/types';
+import { WorkLog, Employee, CropStage, InventoryItem, InventoryCategory, User, Expense, ExpenseCategory } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { getCurrentStageForProject } from '@/services/stageService';
 import { syncTodaysLabourExpenses } from '@/services/workLogService';
 import { recordInventoryUsage } from '@/services/inventoryService';
 import { SimpleStatCard } from '@/components/dashboard/SimpleStatCard';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, useQuery } from '@tanstack/react-query';
+import { getCompany } from '@/services/companyService';
 import {
   Dialog,
   DialogTrigger,
@@ -41,27 +42,15 @@ export default function OperationsPage() {
   const { data: allUsers = [] } = useCollection<User>('users', 'users');
   const { data: allStages = [] } = useCollection<CropStage>('projectStages', 'projectStages');
   const { data: allInventoryItems = [] } = useCollection<InventoryItem>('inventoryItems', 'inventoryItems');
-  const { data: allCategories = [] } = useCollection<InventoryCategoryItem>(
-    'inventoryCategories',
-    'inventoryCategories',
-  );
-  
-  // Get categories for the company
-  const categories = useMemo(() => {
-    if (!user?.companyId) return [];
-    return allCategories.filter((cat) => cat.companyId === user.companyId);
-  }, [allCategories, user?.companyId]);
-  
-  // Default categories if none exist
-  const defaultCategories = ['fertilizer', 'chemical', 'diesel', 'materials'];
+  // Available categories = only those that exist in company inventory (for plan work / inputs)
   const availableCategories = useMemo(() => {
-    const categoryNames = categories.map((cat) => cat.name.toLowerCase());
-    const defaults = defaultCategories.filter((def) => !categoryNames.includes(def));
-    return [
-      ...categories.map((cat) => cat.name),
-      ...defaults,
-    ].sort();
-  }, [categories]);
+    const inv = activeProject
+      ? allInventoryItems.filter((i) => i.companyId === activeProject.companyId)
+      : allInventoryItems;
+    const cats = new Set<string>();
+    inv.forEach((i) => cats.add(i.category));
+    return Array.from(cats).sort();
+  }, [allInventoryItems, activeProject]);
 
   const [search, setSearch] = useState('');
 
@@ -127,8 +116,19 @@ export default function OperationsPage() {
   const [notes, setNotes] = useState('');
   const [changeReason, setChangeReason] = useState('');
 
-  const WORK_TYPES = ['Spraying', 'Fertilizer application', 'Watering', 'Weeding', 'Other'];
+  const BASE_WORK_TYPES = ['Spraying', 'Fertilizer application', 'Watering', 'Weeding', 'Tying of crops'];
+  const { data: company } = useQuery({
+    queryKey: ['company', user?.companyId],
+    queryFn: () => getCompany(user!.companyId!),
+    enabled: !!user?.companyId,
+  });
+  const workTypesList = useMemo(() => {
+    const custom = (company as { customWorkTypes?: string[] } | undefined)?.customWorkTypes ?? [];
+    return [...BASE_WORK_TYPES, ...custom];
+  }, [company]);
   const [saving, setSaving] = useState(false);
+  const [wateringContainers, setWateringContainers] = useState('');
+  const [tyingUsedType, setTyingUsedType] = useState<'ropes' | 'sacks'>('ropes');
   const [syncing, setSyncing] = useState(false);
   const [markingPaid, setMarkingPaid] = useState(false);
 
@@ -179,55 +179,44 @@ export default function OperationsPage() {
       .sort((a, b) => (a.stageIndex ?? 0) - (b.stageIndex ?? 0));
   }, [allStages, activeProject]);
 
-  // Get managers (users with manager or company-admin role, or employees with operations-manager role)
+  // Get managers (users with manager or company-admin role, or employees with operations-manager role).
+  // Dedupe by auth identity: same person can be both a user (manager) and an employee (operations-manager) — show once.
   const managers = useMemo(() => {
     if (!activeProject) return [];
     const companyId = activeProject.companyId;
-    
-    // Get users who are managers or company-admins in this company
+
     const managerUsers = allUsers
-      .filter(u => 
-        u.companyId === companyId && 
-        (u.role === 'manager' || u.role === 'company-admin')
-      )
-      .map(u => ({
-        id: u.id,
-        name: u.name,
-        role: u.role,
-        type: 'user' as const,
-      }));
-    
-    // Get employees who are operations managers in this company
+      .filter(u => u.companyId === companyId && (u.role === 'manager' || u.role === 'company-admin'))
+      .map(u => ({ id: u.id, name: u.name, role: u.role, type: 'user' as const, authId: u.id }));
+
     const managerEmployees = companyEmployees
       .filter(e => e.role === 'operations-manager' || e.role.includes('manager'))
       .map(e => ({
         id: e.id,
         name: e.name,
-        role: e.role,
+        role: 'operations-manager' as const,
         type: 'employee' as const,
+        authId: (e as Employee & { authUserId?: string }).authUserId ?? e.id,
       }));
-    
-    // Combine and deduplicate by id (prefer users over employees if same id)
-    const allManagers = [...managerUsers, ...managerEmployees];
-    const uniqueManagers = Array.from(
-      new Map(allManagers.map(m => [m.id, m])).values()
-    );
-    
-    // If current user is a manager/admin and not already in the list, add them
+
+    // One entry per person by authId; prefer employee entry so label is "Operations (Manager)" and we store employee id for allocation
+    const byAuthId = new Map<string, { id: string; name: string; role: string; type: 'user' | 'employee' }>();
+    managerUsers.forEach(m => byAuthId.set(m.authId, { id: m.id, name: m.name, role: m.role, type: 'user' }));
+    managerEmployees.forEach(m => {
+      byAuthId.set(m.authId, { id: m.id, name: m.name, role: m.role, type: 'employee' });
+    });
+
+    let uniqueManagers = Array.from(byAuthId.values());
+
     if (user && (user.role === 'manager' || user.role === 'company-admin') && user.companyId === companyId) {
-      const userExists = uniqueManagers.some(m => m.id === user.id);
+      const userExists = uniqueManagers.some(m => m.id === user.id || (m.type === 'employee' && (allEmployees.find(e => e.id === m.id) as Employee & { authUserId?: string })?.authUserId === user.id));
       if (!userExists) {
-        uniqueManagers.unshift({
-          id: user.id,
-          name: user.name,
-          role: user.role,
-          type: 'user' as const,
-        });
+        uniqueManagers = [{ id: user.id, name: user.name, role: user.role, type: 'user' as const }, ...uniqueManagers];
       }
     }
-    
+
     return uniqueManagers;
-  }, [allUsers, companyEmployees, activeProject, user]);
+  }, [allUsers, companyEmployees, allEmployees, activeProject, user]);
 
   // Get the selected stage or default to current stage
   const selectedStage = useMemo(() => {
@@ -304,7 +293,9 @@ export default function OperationsPage() {
   };
 
   const getItemsForCategory = (category: InventoryCategory) => {
-    return companyInventory.filter((i) => i.category === category);
+    return companyInventory.filter(
+      (i) => i.category === category || (category === 'diesel' && i.category === 'fuel'),
+    );
   };
 
   const handleAddWorkLog = async (e: React.FormEvent) => {
@@ -343,6 +334,8 @@ export default function OperationsPage() {
         employeeId: selectedEmployeeIds[0] || undefined, // Keep for backward compatibility
         employeeName: employeeNames || undefined,
         notes: notes || undefined,
+        wateringContainersUsed: workType === 'Watering' && wateringContainers ? parseQuantityOrFraction(wateringContainers) : undefined,
+        tyingUsedType: workType === 'Tying of crops' ? tyingUsedType : undefined,
         changeReason: changeReason || undefined,
         managerId: finalManagerId,
         managerName: finalManagerName,
@@ -374,8 +367,8 @@ export default function OperationsPage() {
         quantityStr: string,
         extra?: { drumsSprayed?: number },
       ) => {
-        const quantityVal = Number(quantityStr || '0');
-        if (!inventoryItemId || !quantityVal) return;
+        const quantityVal = parseQuantityOrFraction(quantityStr || '0');
+        if (!inventoryItemId || quantityVal <= 0) return;
         const item = companyInventory.find((i) => i.id === inventoryItemId);
         if (!item) return;
         await recordInventoryUsage({
@@ -418,6 +411,8 @@ export default function OperationsPage() {
       setWorkType('');
       setNumberOfPeople('');
       setRatePerPerson('');
+      setWateringContainers('');
+      setTyingUsedType('ropes');
       setSelectedEmployeeIds([]);
       setSelectedStageIndex(null);
       setSelectedManagerId('');
@@ -495,6 +490,8 @@ export default function OperationsPage() {
       setWorkCategory('');
       setNumberOfPeople('');
       setRatePerPerson('');
+      setWateringContainers('');
+      setTyingUsedType('ropes');
       setSelectedEmployeeIds([]);
       setSelectedStageIndex(null);
       setSelectedManagerId('');
@@ -812,7 +809,7 @@ export default function OperationsPage() {
                         <SelectValue placeholder="Select work type" />
                       </SelectTrigger>
                       <SelectContent>
-                        {WORK_TYPES.map((wt) => (
+                        {workTypesList.map((wt) => (
                           <SelectItem key={wt} value={wt}>
                             {wt}
                           </SelectItem>
@@ -853,6 +850,33 @@ export default function OperationsPage() {
                     )}
                   </div>
                 </div>
+                {workType === 'Watering' && (
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-foreground">Containers used (e.g. water containers)</label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      className="fv-input w-full"
+                      value={wateringContainers}
+                      onChange={(e) => setWateringContainers(e.target.value)}
+                      placeholder="e.g. 2, 0.5, 1/2"
+                    />
+                  </div>
+                )}
+                {workType === 'Tying of crops' && (
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-foreground">Used</label>
+                    <Select value={tyingUsedType} onValueChange={(v) => setTyingUsedType(v as 'ropes' | 'sacks')}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ropes">Ropes</SelectItem>
+                        <SelectItem value="sacks">Sacks</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <div className="space-y-1">
                   <label className="text-sm font-medium text-foreground">Notes</label>
                   <textarea
@@ -884,11 +908,17 @@ export default function OperationsPage() {
                               <SelectValue placeholder="Select category" />
                             </SelectTrigger>
                             <SelectContent>
-                              {availableCategories.map((cat) => (
-                                <SelectItem key={cat} value={cat.toLowerCase()}>
-                                  {cat.charAt(0).toUpperCase() + cat.slice(1)}
-                                </SelectItem>
-                              ))}
+                              {availableCategories.length === 0 ? (
+                                <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                                  No inventory categories yet. Add items in Inventory first.
+                                </div>
+                              ) : (
+                                availableCategories.map((cat) => (
+                                  <SelectItem key={cat} value={cat}>
+                                    {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                                  </SelectItem>
+                                ))
+                              )}
                             </SelectContent>
                           </Select>
                         </div>
@@ -920,12 +950,12 @@ export default function OperationsPage() {
                         <div className="space-y-1">
                           <label className="text-xs font-medium text-foreground">Quantity</label>
                           <input
-                            type="number"
-                            min={0}
+                            type="text"
+                            inputMode="decimal"
                             className="fv-input text-sm h-9"
                             value={usage.quantity}
                             onChange={(e) => updateInputUsage(usage.id, 'quantity', e.target.value)}
-                            placeholder="0"
+                            placeholder="e.g. 2, 0.5, 1/2"
                           />
                         </div>
                         {usage.type === 'chemical' && (
@@ -1578,7 +1608,7 @@ export default function OperationsPage() {
                         <SelectValue placeholder="Select work type" />
                       </SelectTrigger>
                       <SelectContent>
-                        {[...new Set([...WORK_TYPES, workType].filter(Boolean))].map((wt) => (
+                        {[...new Set([...workTypesList, workType].filter(Boolean))].map((wt) => (
                           <SelectItem key={wt} value={wt}>
                             {wt}
                           </SelectItem>

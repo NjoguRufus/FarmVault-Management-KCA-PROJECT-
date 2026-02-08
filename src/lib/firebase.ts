@@ -18,8 +18,13 @@ const firebaseConfig = {
 // Initialize Firebase core app (singleton)
 export const app = initializeApp(firebaseConfig);
 
+// Secondary app used only for creating new users (e.g. employees) so the current user stays signed in
+const appEmployeeCreate = initializeApp(firebaseConfig, 'EmployeeCreate');
+
 // Initialize services
 export const auth = getAuth(app);
+/** Use this when creating employee accounts so the company admin is not logged out. */
+export const authEmployeeCreate = getAuth(appEmployeeCreate);
 export const db = getFirestore(app);
 
 // Lazily enable Analytics only when supported (browser only)

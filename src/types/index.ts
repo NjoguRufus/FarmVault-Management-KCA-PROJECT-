@@ -24,6 +24,8 @@ export interface Company {
   userCount: number;
   projectCount: number;
   revenue: number;
+  /** Custom work types (e.g. "Pruning", "Staking") added by the company */
+  customWorkTypes?: string[];
   createdAt: Date;
 }
 
@@ -144,7 +146,22 @@ export const BROKER_EXPENSE_CATEGORIES: { value: ExpenseCategory; label: string 
   { value: 'other', label: 'Other' },
 ];
 
-export type InventoryCategory = 'fertilizer' | 'chemical' | 'diesel' | 'materials';
+export type InventoryCategory =
+  | 'fertilizer'
+  | 'chemical'
+  | 'fuel'
+  | 'diesel'
+  | 'materials'
+  | 'sacks'
+  | 'ropes'
+  | 'wooden-crates'
+  | 'seeds';
+
+/** Chemical: box (with units per box) or single products */
+export type ChemicalPackagingType = 'box' | 'single';
+
+/** Fuel sub-type when category is fuel */
+export type FuelType = 'diesel' | 'petrol';
 
 export interface InventoryCategoryItem {
   id: string;
@@ -164,24 +181,40 @@ export interface InventoryItem {
   unit: string;
   pricePerUnit?: number;
 
+  // --- Chemical: packaging and total units ---
+  /** When category is chemical: 'box' or 'single' */
+  packagingType?: ChemicalPackagingType;
+  /** When chemical and box: bottles/packets per box. Total units = quantity * unitsPerBox */
+  unitsPerBox?: number;
+
+  // --- Fuel: diesel/petrol, containers (mtungi), litres ---
+  /** When category is fuel: diesel or petrol */
+  fuelType?: FuelType;
+  /** Number of containers (mtungi) */
+  containers?: number;
+  /** Litres (optional) */
+  litres?: number;
+
+  // --- Fertilizer: bags, kgs optional ---
+  /** When category is fertilizer: primary quantity in bags */
+  bags?: number;
+  /** Optional weight in kg */
+  kgs?: number;
+
+  // --- Wooden crates (boxes): big or small ---
+  /** When category is wooden-crates: box size for harvest/display */
+  boxSize?: 'big' | 'small';
+
   // Legacy scope fields kept for backwards compatibility.
   // New items should use `cropTypes` instead.
-  // 'project'  -> only for a specific project/season
-  // 'crop'     -> for all projects of a given crop
-  // 'all'      -> any crop/project (general stock)
   scope?: 'project' | 'crop' | 'all';
-  // Either a specific crop type or 'all' for general-purpose stock
   cropType?: CropType | 'all';
-
-  // Preferred: list of crops this item is used for.
-  // When omitted, the item is treated as usable for all crops.
   cropTypes?: CropType[];
 
   supplierId?: string;
-  // Optional denormalised supplier name for UI
   supplierName?: string;
-
-  // Threshold for low stock alerts (default to 10 if undefined)
+  /** Date when item was picked up from supplier (e.g. for seeds) */
+  pickupDate?: string;
   minThreshold?: number;
 
   lastUpdated: Date;
@@ -232,6 +265,10 @@ export interface WorkLog {
   notes?: string;
   // Free-text description of inputs used (spraying, fertilizer application, etc.)
   inputsUsed?: string;
+  /** When work type is Watering: number of containers used */
+  wateringContainersUsed?: number;
+  /** When work type is Tying of crops: whether they used ropes or sacks */
+  tyingUsedType?: 'ropes' | 'sacks';
   changeReason?: string; // Reason for changing work mid-way
 
   managerId?: string;
@@ -355,9 +392,14 @@ export interface Supplier {
   name: string;
   contact: string;
   email?: string;
-  category: string;
+  /** Single category (legacy); use categories when present */
+  category?: string;
+  /** Multiple categories this supplier can provide */
+  categories?: string[];
   rating: number;
   status: 'active' | 'inactive';
+  /** Short notes for future reference (review section) */
+  reviewNotes?: string;
 }
 
 export interface Employee {

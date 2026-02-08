@@ -22,25 +22,88 @@ const DrawerOverlay = React.forwardRef<
 ));
 DrawerOverlay.displayName = DrawerPrimitive.Overlay.displayName;
 
+const MIN_DRAWER_VH = 30;
+const MAX_DRAWER_VH = 90;
+const DEFAULT_DRAWER_VH = 50;
+
 const DrawerContent = React.forwardRef<
   React.ElementRef<typeof DrawerPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DrawerPrimitive.Content>
->(({ className, children, ...props }, ref) => (
-  <DrawerPortal>
-    <DrawerOverlay />
-    <DrawerPrimitive.Content
-      ref={ref}
-      className={cn(
-        "fixed inset-x-0 bottom-0 z-50 mt-24 flex h-auto flex-col rounded-t-[10px] border bg-background",
-        className,
-      )}
-      {...props}
-    >
-      <div className="mx-auto mt-4 h-2 w-[100px] rounded-full bg-muted" />
-      {children}
-    </DrawerPrimitive.Content>
-  </DrawerPortal>
-));
+  React.ComponentPropsWithoutRef<typeof DrawerPrimitive.Content> & {
+    resizable?: boolean;
+    defaultHeightVh?: number;
+    minHeightVh?: number;
+    maxHeightVh?: number;
+  }
+>(
+  (
+    {
+      className,
+      children,
+      resizable = false,
+      defaultHeightVh = DEFAULT_DRAWER_VH,
+      minHeightVh = MIN_DRAWER_VH,
+      maxHeightVh = MAX_DRAWER_VH,
+      ...props
+    },
+    ref,
+  ) => {
+    const [heightVh, setHeightVh] = React.useState(defaultHeightVh);
+    const startYRef = React.useRef(0);
+    const startHeightRef = React.useRef(defaultHeightVh);
+
+    const handlePointerMove = React.useCallback(
+      (e: PointerEvent) => {
+        const deltaY = startYRef.current - e.clientY;
+        const vhPerPixel = 0.15;
+        const next = Math.round(startHeightRef.current + deltaY * vhPerPixel);
+        setHeightVh(Math.min(maxHeightVh, Math.max(minHeightVh, next)));
+      },
+      [minHeightVh, maxHeightVh],
+    );
+
+    const handlePointerUp = React.useCallback(() => {
+      document.removeEventListener("pointermove", handlePointerMove);
+      document.removeEventListener("pointerup", handlePointerUp);
+    }, [handlePointerMove]);
+
+    const handlePointerDown = React.useCallback(
+      (e: React.PointerEvent) => {
+        if (!resizable) return;
+        e.preventDefault();
+        startYRef.current = e.clientY;
+        startHeightRef.current = heightVh;
+        document.addEventListener("pointermove", handlePointerMove);
+        document.addEventListener("pointerup", handlePointerUp);
+      },
+      [resizable, heightVh, handlePointerMove, handlePointerUp],
+    );
+
+    const style = resizable ? { height: `${heightVh}vh`, maxHeight: "90vh" } : undefined;
+
+    return (
+      <DrawerPortal>
+        <DrawerOverlay />
+        <DrawerPrimitive.Content
+          ref={ref}
+          className={cn(
+            "fixed inset-x-0 bottom-0 z-50 mt-24 flex flex-col rounded-t-[10px] border bg-background",
+            !resizable && "h-auto",
+            className,
+          )}
+          style={style}
+          {...props}
+        >
+          <div
+            className="mx-auto mt-4 h-2 w-[100px] shrink-0 rounded-full bg-muted cursor-grab active:cursor-grabbing touch-none select-none"
+            aria-label={resizable ? "Drag to resize or close drawer" : "Drag to move or close drawer"}
+            onPointerDown={handlePointerDown}
+          />
+          <div className={cn("flex-1 overflow-auto", resizable && "min-h-0")}>{children}</div>
+        </DrawerPrimitive.Content>
+      </DrawerPortal>
+    );
+  },
+);
 DrawerContent.displayName = "DrawerContent";
 
 const DrawerHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (

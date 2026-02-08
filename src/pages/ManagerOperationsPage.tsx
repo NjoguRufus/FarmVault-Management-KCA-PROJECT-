@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Search, CheckCircle, Clock, CalendarDays, Eye, Filter, Download, Banknote, List, Grid, Plus } from 'lucide-react';
 import { useProject } from '@/contexts/ProjectContext';
-import { cn } from '@/lib/utils';
+import { cn, parseQuantityOrFraction } from '@/lib/utils';
 import { useCollection } from '@/hooks/useCollection';
 import { WorkLog, Employee, CropStage, InventoryItem, InventoryCategory, Expense, ExpenseCategory } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
@@ -37,27 +37,37 @@ import { toDate } from '@/lib/dateUtils';
 import { exportToExcel } from '@/lib/exportUtils';
 import { db } from '@/lib/firebase';
 import { addDoc, collection, serverTimestamp, updateDoc, doc, writeBatch, increment } from 'firebase/firestore';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { recordInventoryUsage } from '@/services/inventoryService';
+import { getCompany, updateCompany } from '@/services/companyService';
 
-const WORK_TYPES = [
+const BASE_WORK_TYPES = [
   'Spraying',
   'Fertilizer application',
   'Watering',
   'Weeding',
-  'Other',
+  'Tying of crops',
 ] as const;
 
 export default function ManagerOperationsPage() {
-  const { activeProject } = useProject();
+  const { activeProject, setActiveProject, projects } = useProject();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   
   // Fetch data from Firestore
-  const { data: allWorkLogs = [], isLoading } = useCollection<WorkLog>('workLogs', 'workLogs');
+  const { data: allWorkLogs = [], isLoading } = useCollection<WorkLog>('workLogs', 'workLogs', { refetchInterval: 3000 });
   const { data: allEmployees = [] } = useCollection<Employee>('employees', 'employees');
   const { data: allStages = [] } = useCollection<CropStage>('projectStages', 'projectStages');
   const { data: allInventoryItems = [] } = useCollection<InventoryItem>('inventoryItems', 'inventoryItems');
+  const { data: company } = useQuery({
+    queryKey: ['company', user?.companyId],
+    queryFn: () => getCompany(user!.companyId!),
+    enabled: !!user?.companyId,
+  });
+  const workTypesList = useMemo(() => {
+    const custom = (company as { customWorkTypes?: string[] } | undefined)?.customWorkTypes ?? [];
+    return [...BASE_WORK_TYPES, ...custom];
+  }, [company]);
   
   // State for filters
   const [search, setSearch] = useState('');
@@ -76,6 +86,27 @@ export default function ManagerOperationsPage() {
     return search || statusFilter !== 'all' || stageFilter !== 'all' || dateRangeFilter !== 'all';
   }, [search, statusFilter, stageFilter, dateRangeFilter]);
 
+  // Current user can be a manager by platform role (user.role === 'manager') or by employee role (operations-manager).
+  // When work is allocated from Operations, managerId can be either user.id (auth uid) or employee doc id.
+  const managerIdsForCurrentUser = useMemo(() => {
+    if (!user) return new Set<string>();
+    const ids = new Set<string>();
+    ids.add(user.id);
+    const myEmployee = allEmployees.find((e) => (e as Employee & { authUserId?: string }).authUserId === user.id);
+    if (myEmployee) ids.add(myEmployee.id);
+    return ids;
+  }, [user, allEmployees]);
+
+  const isManagerOrAdmin = useMemo(() => {
+    if (!user) return false;
+    if (user.role === 'company-admin') return true;
+    if (user.role === 'manager') return true;
+    if ((user as { employeeRole?: string }).employeeRole === 'operations-manager') return true;
+    return false;
+  }, [user]);
+
+  const showPeopleSection = user?.role === 'company-admin';
+
   // Get work logs for the current manager's projects
   const managerWorkLogs = useMemo(() => {
     if (!user) return [];
@@ -85,17 +116,18 @@ export default function ManagerOperationsPage() {
       return allWorkLogs.filter((log) => log.companyId === user.companyId);
     }
 
-    // Managers: show logs where they are the assigned manager
-    if (user.role === 'manager') {
+    // Managers (platform or employee role): show logs where they are the assigned manager (by user id or employee id)
+    if (isManagerOrAdmin) {
       return allWorkLogs.filter(
         (log) =>
           log.companyId === user.companyId &&
-          log.managerId === user.id,
+          log.managerId != null &&
+          managerIdsForCurrentUser.has(log.managerId),
       );
     }
 
     return [];
-  }, [allWorkLogs, user]);
+  }, [allWorkLogs, user, isManagerOrAdmin, managerIdsForCurrentUser]);
 
   // Admin-planned work assigned to this manager that still needs a manager submission.
   // If the manager has already created their own daily work log for the same stage/date,
@@ -106,7 +138,8 @@ export default function ManagerOperationsPage() {
     return allWorkLogs.filter((plan) => {
       if (
         plan.companyId !== user.companyId ||
-        plan.managerId !== user.id ||
+        plan.managerId == null ||
+        !managerIdsForCurrentUser.has(plan.managerId) ||
         plan.managerSubmittedAt
       ) {
         return false;
@@ -128,13 +161,14 @@ export default function ManagerOperationsPage() {
           sameDay &&
           log.projectId === plan.projectId &&
           log.stageIndex === plan.stageIndex &&
-          log.managerId === user.id
+          log.managerId != null &&
+          managerIdsForCurrentUser.has(log.managerId)
         );
       });
 
       return !hasManagerLogged;
     });
-  }, [allWorkLogs, managerWorkLogs, user]);
+  }, [allWorkLogs, managerWorkLogs, user, managerIdsForCurrentUser]);
 
   // Work category options (from existing logs)
   const workCategoryOptions = useMemo(() => {
@@ -280,7 +314,7 @@ export default function ManagerOperationsPage() {
   const [formRate, setFormRate] = useState('');
   const [formNotes, setFormNotes] = useState('');
   const [formInputs, setFormInputs] = useState<
-    { id: string; category: InventoryCategory; itemId: string; quantity: string }[]
+    { id: string; category: InventoryCategory; itemId: string; quantity: string; litres?: string; kgs?: string }[]
   >([]);
   const [submittingPlanLog, setSubmittingPlanLog] = useState(false);
 
@@ -291,10 +325,21 @@ export default function ManagerOperationsPage() {
   const [logNumberOfPeople, setLogNumberOfPeople] = useState('');
   const [logRatePerPerson, setLogRatePerPerson] = useState('');
   const [logDrumsSprayed, setLogDrumsSprayed] = useState(''); // For spraying
+  const [logWateringContainers, setLogWateringContainers] = useState(''); // For watering
+  const [logTyingUsedType, setLogTyingUsedType] = useState<'ropes' | 'sacks'>('ropes'); // For tying of crops
   const [logNotes, setLogNotes] = useState('');
-  const [logInputs, setLogInputs] = useState<
-    { id: string; category: InventoryCategory; itemId: string; quantity: string }[]
-  >([]);
+  const [customWorkTypeName, setCustomWorkTypeName] = useState('');
+  const [addCustomWorkTypeOpen, setAddCustomWorkTypeOpen] = useState(false);
+  const [savingCustomWorkType, setSavingCustomWorkType] = useState(false);
+  type LogInputUsage = {
+    id: string;
+    category: InventoryCategory;
+    itemId: string;
+    quantity: string;
+    litres?: string;
+    kgs?: string;
+  };
+  const [logInputs, setLogInputs] = useState<LogInputUsage[]>([]);
   const [savingDailyWork, setSavingDailyWork] = useState(false);
 
   // Get current stage for the project
@@ -332,22 +377,51 @@ export default function ManagerOperationsPage() {
     [allInventoryItems, activeProject],
   );
 
+  // Categories that actually exist in company inventory (for dropdowns when recording work)
+  const inventoryCategoriesFromStock = useMemo(() => {
+    const cats = new Set<InventoryCategory>();
+    companyInventory.forEach((i) => cats.add(i.category));
+    return Array.from(cats).sort();
+  }, [companyInventory]);
+
+  // Categories from inventory for the selected plan's company (Log in Work dialog)
+  const inventoryCategoriesForPlan = useMemo(() => {
+    if (!selectedPlan?.companyId) return [];
+    const items = allInventoryItems.filter((i) => i.companyId === selectedPlan.companyId);
+    const cats = new Set<InventoryCategory>();
+    items.forEach((i) => cats.add(i.category));
+    return Array.from(cats).sort();
+  }, [allInventoryItems, selectedPlan?.companyId]);
+
+  const getInventoryCategoryLabel = (cat: string) =>
+    ({ fertilizer: 'Fertilizer', chemical: 'Chemical', fuel: 'Fuel', diesel: 'Diesel', materials: 'Materials', sacks: 'Sacks', ropes: 'Ropes', 'wooden-crates': 'Wooden crates' }[cat] || cat);
+
   // When changing work type, optionally seed inputs and clear when not needed
   const handleChangeLogWorkType = (value: string) => {
     setLogWorkType(value);
 
-    // For spraying or fertilizer application, ensure at least one input row exists
-    if ((value === 'Spraying' || value === 'Fertilizer application') && logInputs.length === 0) {
-      const defaultCategory =
-        value === 'Spraying' ? 'chemical' : 'fertilizer';
+    // For spraying, fertilizer application, or tying of crops, ensure at least one input row exists
+    if ((value === 'Spraying' || value === 'Fertilizer application' || value === 'Tying of crops') && logInputs.length === 0) {
+      let preferred: InventoryCategory = 'fertilizer';
+      if (value === 'Spraying') preferred = 'chemical';
+      else if (value === 'Fertilizer application') preferred = 'fertilizer';
+      else if (value === 'Tying of crops') preferred = inventoryCategoriesFromStock.includes('ropes') ? 'ropes' : inventoryCategoriesFromStock.includes('sacks') ? 'sacks' : 'ropes';
+      const defaultCategory = inventoryCategoriesFromStock.includes(preferred)
+        ? preferred
+        : (inventoryCategoriesFromStock[0] ?? preferred);
       setLogInputs([
         {
           id: Date.now().toString(),
-          category: defaultCategory as InventoryCategory,
+          category: defaultCategory,
           itemId: '',
           quantity: '',
+          litres: '',
+          kgs: '',
         },
       ]);
+    }
+    if (value === 'Tying of crops') {
+      setLogTyingUsedType(inventoryCategoriesFromStock.includes('ropes') ? 'ropes' : 'sacks');
     }
 
     // For work types that don't use inputs, clear them
@@ -358,6 +432,9 @@ export default function ManagerOperationsPage() {
     // Reset drums when not spraying
     if (value !== 'Spraying') {
       setLogDrumsSprayed('');
+    }
+    if (value !== 'Watering') {
+      setLogWateringContainers('');
     }
   };
 
@@ -424,7 +501,18 @@ export default function ManagerOperationsPage() {
             .map((usage) => {
               const item = allInventoryItems.find((i) => i.id === usage.itemId);
               const name = item?.name || 'Unknown item';
-              return `${usage.category}: ${name} - ${usage.quantity}`;
+              if (usage.category === 'fuel' || usage.category === 'diesel') {
+                const parts = [usage.quantity ? `${usage.quantity} containers` : ''];
+                if (usage.litres?.trim()) parts.push(`${usage.litres} L`);
+                return `${usage.category}: ${name} - ${parts.filter(Boolean).join(', ') || usage.quantity}`;
+              }
+              if (usage.category === 'fertilizer') {
+                const parts = [usage.quantity ? `${usage.quantity} bags` : ''];
+                if (usage.kgs?.trim()) parts.push(`${usage.kgs} kg`);
+                return `fertilizer: ${name} - ${parts.filter(Boolean).join(', ') || usage.quantity}`;
+              }
+              const chemUnit = item?.packagingType === 'box' ? 'boxes' : 'units';
+              return `${usage.category}: ${name} - ${usage.quantity} ${chemUnit}`;
             })
             .join('; ');
 
@@ -511,7 +599,18 @@ export default function ManagerOperationsPage() {
               .map((usage) => {
                 const item = companyInventory.find((i) => i.id === usage.itemId);
                 const name = item?.name || 'Unknown item';
-                return `${usage.category}: ${name} - ${usage.quantity}`;
+                if (usage.category === 'fuel' || usage.category === 'diesel') {
+                  const parts = [usage.quantity ? `${usage.quantity} containers` : ''];
+                  if (usage.litres?.trim()) parts.push(`${usage.litres} L`);
+                  return `${usage.category}: ${name} - ${parts.filter(Boolean).join(', ') || usage.quantity}`;
+                }
+                if (usage.category === 'fertilizer') {
+                  const parts = [usage.quantity ? `${usage.quantity} bags` : ''];
+                  if (usage.kgs?.trim()) parts.push(`${usage.kgs} kg`);
+                  return `fertilizer: ${name} - ${parts.filter(Boolean).join(', ') || usage.quantity}`;
+                }
+                const chemUnit = item?.packagingType === 'box' ? 'boxes' : 'units';
+                return `${usage.category}: ${name} - ${usage.quantity} ${chemUnit}`;
               })
               .join('; ');
 
@@ -557,11 +656,7 @@ export default function ManagerOperationsPage() {
         const item = companyInventory.find((i) => i.id === usage.itemId);
         if (!item) continue;
 
-        // Parse quantity - extract numeric value from string like "5L" or "10kg"
-        const quantityStr = usage.quantity.toString().trim();
-        const quantityMatch = quantityStr.match(/^(\d+(?:\.\d+)?)/);
-        const quantityValue = quantityMatch ? Number(quantityMatch[1]) : 0;
-        
+        const quantityValue = parseQuantityOrFraction(usage.quantity.toString());
         if (quantityValue > 0) {
           // Deduct from inventory
           const itemRef = doc(db, 'inventoryItems', usage.itemId);
@@ -587,10 +682,7 @@ export default function ManagerOperationsPage() {
             const item = companyInventory.find((i) => i.id === usage.itemId);
             if (!item) return;
 
-            const quantityStr = usage.quantity.toString().trim();
-            const quantityMatch = quantityStr.match(/^(\d+(?:\.\d+)?)/);
-            const quantityValue = quantityMatch ? Number(quantityMatch[1]) : 0;
-
+            const quantityValue = parseQuantityOrFraction(usage.quantity.toString());
             if (quantityValue > 0) {
               await recordInventoryUsage({
                 companyId: activeProject.companyId,
@@ -616,6 +708,8 @@ export default function ManagerOperationsPage() {
       setLogNumberOfPeople('');
       setLogRatePerPerson('');
       setLogDrumsSprayed('');
+      setLogWateringContainers('');
+      setLogTyingUsedType('ropes');
       setLogNotes('');
       setLogInputs([]);
 
@@ -862,7 +956,7 @@ export default function ManagerOperationsPage() {
                     </p>
                   )}
                   <Button size="sm" className="w-full mt-3" onClick={() => openFillDialog(plan)}>
-                    Fill Work Log
+                    Log in Work
                   </Button>
                 </div>
               </div>
@@ -1089,7 +1183,9 @@ export default function ManagerOperationsPage() {
                   <th className="text-left p-3 text-sm font-medium text-muted-foreground">Date & Time</th>
                   <th className="text-left p-3 text-sm font-medium text-muted-foreground">Work Category</th>
                   <th className="text-left p-3 text-sm font-medium text-muted-foreground">Stage</th>
-                  <th className="text-left p-3 text-sm font-medium text-muted-foreground">People</th>
+                  {showPeopleSection && (
+                    <th className="text-left p-3 text-sm font-medium text-muted-foreground">People</th>
+                  )}
                   <th className="text-left p-3 text-sm font-medium text-muted-foreground">Amount</th>
                   <th className="text-left p-3 text-sm font-medium text-muted-foreground">Status</th>
                   <th className="text-left p-3 text-sm font-medium text-muted-foreground">Actions</th>
@@ -1122,16 +1218,18 @@ export default function ManagerOperationsPage() {
                         {log.stageName}
                       </Badge>
                     </td>
-                    <td className="p-3 relative z-10">
-                      <div className="text-sm">
-                        {log.numberOfPeople} people
-                        {log.ratePerPerson && (
-                          <div className="text-xs text-muted-foreground">
-                            @ {formatCurrency(log.ratePerPerson)} each
-                          </div>
-                        )}
-                      </div>
-                    </td>
+                    {showPeopleSection && (
+                      <td className="p-3 relative z-10">
+                        <div className="text-sm">
+                          {log.numberOfPeople} people
+                          {log.ratePerPerson && (
+                            <div className="text-xs text-muted-foreground">
+                              @ {formatCurrency(log.ratePerPerson)} each
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    )}
                     <td className="p-3 relative z-10">
                       <div className="font-semibold text-foreground">
                         {log.totalPrice ? formatCurrency(log.totalPrice) : 'N/A'}
@@ -1150,7 +1248,7 @@ export default function ManagerOperationsPage() {
                       </Badge>
                     </td>
                     <td className="p-3 relative z-10">
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 flex-wrap">
                         <Button
                           variant="ghost"
                           size="sm"
@@ -1162,7 +1260,27 @@ export default function ManagerOperationsPage() {
                           <Eye className="h-4 w-4 mr-1" />
                           View
                         </Button>
-                        {!log.paid && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const d = toDate(log.date);
+                            setLogDate(d || new Date());
+                            setLogWorkType(log.workType || log.workCategory || '');
+                            setLogNumberOfPeople('');
+                            setLogRatePerPerson('');
+                            setLogDrumsSprayed('');
+                            setLogWateringContainers('');
+                            setLogTyingUsedType('ropes');
+                            setLogNotes('');
+                            setLogInputs([]);
+                            setLogDailyWorkOpen(true);
+                          }}
+                        >
+                          Record work
+                        </Button>
+                        {!log.paid && (log.managerSubmittedAt != null || !log.adminName) && (
                           <Button
                             size="sm"
                             onClick={(e) => {
@@ -1216,10 +1334,12 @@ export default function ManagerOperationsPage() {
                   </div>
                   
                   <div className="space-y-1 text-sm">
-                    <p className="text-muted-foreground">
-                      {log.numberOfPeople} people
-                      {log.ratePerPerson && ` @ ${formatCurrency(log.ratePerPerson)}`}
-                    </p>
+                    {showPeopleSection && (
+                      <p className="text-muted-foreground">
+                        {log.numberOfPeople} people
+                        {log.ratePerPerson && ` @ ${formatCurrency(log.ratePerPerson)}`}
+                      </p>
+                    )}
                     {log.totalPrice && (
                       <p className="font-semibold text-foreground">
                         Total: {formatCurrency(log.totalPrice)}
@@ -1233,17 +1353,40 @@ export default function ManagerOperationsPage() {
                     </p>
                   )}
 
-                  <div className="flex gap-2 pt-2">
+                  <div className="flex gap-2 pt-2 flex-wrap">
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => handleViewLog(log)}
-                      className="flex-1"
+                      className="flex-1 min-w-0"
                     >
                       <Eye className="h-4 w-4 mr-1" />
                       View
                     </Button>
-                    {!log.paid && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const project = log.projectId ? projects.find((p) => p.id === log.projectId) : null;
+                        if (project) setActiveProject(project);
+                        const d = toDate(log.date);
+                        setLogDate(d || new Date());
+                        setLogWorkType(log.workType || log.workCategory || '');
+                        setLogNumberOfPeople('');
+                        setLogRatePerPerson('');
+                        setLogDrumsSprayed('');
+                        setLogWateringContainers('');
+                        setLogTyingUsedType('ropes');
+                        setLogNotes('');
+                        setLogInputs([]);
+                        setLogDailyWorkOpen(true);
+                      }}
+                      className="flex-1 min-w-0"
+                    >
+                      Record work
+                    </Button>
+                    {!log.paid && (log.managerSubmittedAt != null || !log.adminName) && (
                       <Button
                         size="sm"
                         onClick={(e) => {
@@ -1251,7 +1394,7 @@ export default function ManagerOperationsPage() {
                           handleMarkAsPaid(log);
                         }}
                         disabled={markingPaid}
-                        className="flex-1"
+                        className="flex-1 min-w-0"
                       >
                         <CheckCircle className="h-4 w-4 mr-1" />
                         Mark Paid
@@ -1311,18 +1454,22 @@ export default function ManagerOperationsPage() {
                   <p className="text-xs text-muted-foreground mb-1">Stage</p>
                   <p className="font-medium">{selectedLog.stageName}</p>
                 </div>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Number of People</p>
-                  <p className="font-medium">{selectedLog.numberOfPeople}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Rate per Person</p>
-                  <p className="font-medium">
-                    {selectedLog.ratePerPerson 
-                      ? formatCurrency(selectedLog.ratePerPerson)
-                      : 'N/A'}
-                  </p>
-                </div>
+                {showPeopleSection && (
+                  <>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Number of People</p>
+                      <p className="font-medium">{selectedLog.numberOfPeople}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Rate per Person</p>
+                      <p className="font-medium">
+                        {selectedLog.ratePerPerson 
+                          ? formatCurrency(selectedLog.ratePerPerson)
+                          : 'N/A'}
+                      </p>
+                    </div>
+                  </>
+                )}
               </div>
               
               {/* Financial Information */}
@@ -1349,28 +1496,37 @@ export default function ManagerOperationsPage() {
                     </div>
                   )}
                 </div>
-                {selectedLog.totalPrice && selectedLog.numberOfPeople && selectedLog.ratePerPerson && (
+                {showPeopleSection && selectedLog.totalPrice && selectedLog.numberOfPeople && selectedLog.ratePerPerson && (
                   <p className="text-xs text-muted-foreground mt-2">
                     Calculation: {selectedLog.numberOfPeople} × {formatCurrency(selectedLog.ratePerPerson)} = {formatCurrency(selectedLog.totalPrice)}
                   </p>
                 )}
               </div>
               
-              {/* Assignment Information */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Assigned To</p>
-                  <p className="font-medium">
-                    {getAssignedEmployeeName(selectedLog)}
-                  </p>
+              {/* Assignment Information (admin sees full assignment; manager sees only managed-by) */}
+              {showPeopleSection ? (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Assigned To</p>
+                    <p className="font-medium">
+                      {getAssignedEmployeeName(selectedLog)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Managed By</p>
+                    <p className="font-medium">
+                      {selectedLog.managerName || getAssigneeName(selectedLog.managerId)}
+                    </p>
+                  </div>
                 </div>
+              ) : (
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Managed By</p>
                   <p className="font-medium">
                     {selectedLog.managerName || getAssigneeName(selectedLog.managerId)}
                   </p>
                 </div>
-              </div>
+              )}
               
               {/* Additional Information */}
               {selectedLog.notes && (
@@ -1413,8 +1569,8 @@ export default function ManagerOperationsPage() {
                 </p>
               </div>
 
-              {/* Actions */}
-              {!selectedLog.paid && (
+              {/* Actions: Mark as Paid only when this work was logged by the manager */}
+              {!selectedLog.paid && (selectedLog.managerSubmittedAt != null || !selectedLog.adminName) && (
                 <div className="flex justify-end gap-2 pt-4 border-t">
                   <Button
                     onClick={() => handleMarkAsPaid(selectedLog)}
@@ -1430,14 +1586,13 @@ export default function ManagerOperationsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Fill Work Log from Assigned Plan */}
+      {/* Log in Work: manager fills details for an assigned plan */}
       <Dialog open={fillOpen} onOpenChange={setFillOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Fill Work Log</DialogTitle>
+            <DialogTitle>Log in Work</DialogTitle>
             <DialogDescription>
-              Complete the details for this assigned work. The original admin plan will
-              remain unchanged.
+              Enter the actual work details for this assigned plan. After you submit, you can mark it as paid when ready.
             </DialogDescription>
           </DialogHeader>
 
@@ -1469,7 +1624,7 @@ export default function ManagerOperationsPage() {
                     <SelectValue placeholder="Select work type" />
                   </SelectTrigger>
                   <SelectContent>
-                    {WORK_TYPES.map((wt) => (
+                    {workTypesList.map((wt) => (
                       <SelectItem key={wt} value={wt}>
                         {wt}
                       </SelectItem>
@@ -1523,8 +1678,11 @@ export default function ManagerOperationsPage() {
                 <div className="space-y-2">
                   {formInputs.map((usage) => {
                     const itemOptions = allInventoryItems.filter(
-                      (i) => i.companyId === selectedPlan.companyId && i.category === usage.category,
+                      (i) =>
+                        i.companyId === selectedPlan.companyId &&
+                        (i.category === usage.category || (usage.category === 'diesel' && i.category === 'fuel')),
                     );
+                    const selectedItem = usage.itemId ? allInventoryItems.find((i) => i.id === usage.itemId) : null;
                     return (
                       <div
                         key={usage.id}
@@ -1545,6 +1703,8 @@ export default function ManagerOperationsPage() {
                                           ...u,
                                           category: val as InventoryCategory,
                                           itemId: '',
+                                          litres: '',
+                                          kgs: '',
                                         }
                                       : u,
                                   ),
@@ -1555,10 +1715,17 @@ export default function ManagerOperationsPage() {
                                 <SelectValue placeholder="Select category" />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="fertilizer">Fertilizer</SelectItem>
-                                <SelectItem value="chemical">Chemical</SelectItem>
-                                <SelectItem value="diesel">Diesel</SelectItem>
-                                <SelectItem value="materials">Materials</SelectItem>
+                                {inventoryCategoriesForPlan.length === 0 ? (
+                                  <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                                    No inventory categories for this plan
+                                  </div>
+                                ) : (
+                                  inventoryCategoriesForPlan.map((cat) => (
+                                    <SelectItem key={cat} value={cat}>
+                                      {getInventoryCategoryLabel(cat)}
+                                    </SelectItem>
+                                  ))
+                                )}
                               </SelectContent>
                             </Select>
                           </div>
@@ -1596,25 +1763,96 @@ export default function ManagerOperationsPage() {
                               </SelectContent>
                             </Select>
                           </div>
-                          <div className="space-y-1">
-                            <label className="text-[11px] text-muted-foreground">
-                              Quantity
-                            </label>
-                            <input
-                              type="number"
-                              min={0}
-                              className="fv-input h-8 text-xs"
-                              value={usage.quantity}
-                              onChange={(e) =>
-                                setFormInputs((prev) =>
-                                  prev.map((u) =>
-                                    u.id === usage.id
-                                      ? { ...u, quantity: e.target.value }
-                                      : u,
-                                  ),
-                                )
-                              }
-                            />
+                          <div className="space-y-1 flex flex-col gap-1">
+                            {(usage.category === 'fuel' || usage.category === 'diesel') && (
+                              <>
+                                <label className="text-[11px] text-muted-foreground">Containers</label>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  className="fv-input h-8 text-xs"
+                                  value={usage.quantity}
+                                  onChange={(e) =>
+                                    setFormInputs((prev) =>
+                                      prev.map((u) =>
+                                        u.id === usage.id ? { ...u, quantity: e.target.value } : u,
+                                      ),
+                                    )
+                                  }
+                                  placeholder="e.g. 2, 0.5, 1/2"
+                                />
+                                <label className="text-[11px] text-muted-foreground">Litres (optional)</label>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  className="fv-input h-8 text-xs"
+                                  value={usage.litres ?? ''}
+                                  onChange={(e) =>
+                                    setFormInputs((prev) =>
+                                      prev.map((u) =>
+                                        u.id === usage.id ? { ...u, litres: e.target.value } : u,
+                                      ),
+                                    )
+                                  }
+                                  placeholder="e.g. 20"
+                                />
+                              </>
+                            )}
+                            {usage.category === 'fertilizer' && (
+                              <>
+                                <label className="text-[11px] text-muted-foreground">Bags</label>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  className="fv-input h-8 text-xs"
+                                  value={usage.quantity}
+                                  onChange={(e) =>
+                                    setFormInputs((prev) =>
+                                      prev.map((u) =>
+                                        u.id === usage.id ? { ...u, quantity: e.target.value } : u,
+                                      ),
+                                    )
+                                  }
+                                  placeholder="e.g. 2, 0.5, 1/2"
+                                />
+                                <label className="text-[11px] text-muted-foreground">Kgs (optional)</label>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  className="fv-input h-8 text-xs"
+                                  value={usage.kgs ?? ''}
+                                  onChange={(e) =>
+                                    setFormInputs((prev) =>
+                                      prev.map((u) =>
+                                        u.id === usage.id ? { ...u, kgs: e.target.value } : u,
+                                      ),
+                                    )
+                                  }
+                                  placeholder="e.g. 50"
+                                />
+                              </>
+                            )}
+                            {(usage.category === 'chemical' || usage.category === 'materials') && (
+                              <>
+                                <label className="text-[11px] text-muted-foreground">
+                                  {selectedItem?.packagingType === 'box' ? 'Boxes' : 'Units'}
+                                </label>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  className="fv-input h-8 text-xs"
+                                  value={usage.quantity}
+                                  onChange={(e) =>
+                                    setFormInputs((prev) =>
+                                      prev.map((u) =>
+                                        u.id === usage.id ? { ...u, quantity: e.target.value } : u,
+                                      ),
+                                    )
+                                  }
+                                  placeholder="e.g. 2, 0.5, 1/2"
+                                />
+                              </>
+                            )}
                           </div>
                         </div>
                         <button
@@ -1639,9 +1877,11 @@ export default function ManagerOperationsPage() {
                         ...prev,
                         {
                           id: Date.now().toString(),
-                          category: 'fertilizer',
+                          category: (inventoryCategoriesForPlan[0] ?? 'fertilizer') as InventoryCategory,
                           itemId: '',
                           quantity: '',
+                          litres: '',
+                          kgs: '',
                         },
                       ])
                     }
@@ -1675,7 +1915,7 @@ export default function ManagerOperationsPage() {
                   onClick={handleSubmitPlanLog}
                   disabled={submittingPlanLog || !formPeople}
                 >
-                  {submittingPlanLog ? 'Submitting...' : 'Submit Work Log'}
+                  {submittingPlanLog ? 'Submitting...' : 'Log in Work'}
                 </Button>
               </div>
             </div>
@@ -1690,13 +1930,19 @@ export default function ManagerOperationsPage() {
             <DialogTitle>Log Daily Work</DialogTitle>
             <DialogDescription>
               Create a new work log entry. You will be automatically assigned as the manager.
-              {currentStage && (
+              {activeProject && (
                 <span className="block mt-2 text-foreground font-medium">
-                  Current stage: {currentStage.stageName}
+                  Project: {activeProject.name}
+                  {currentStage && ` · Stage: ${currentStage.stageName}`}
                 </span>
               )}
             </DialogDescription>
           </DialogHeader>
+          {!activeProject && (
+            <p className="text-sm text-muted-foreground py-4">
+              Click &quot;Record work&quot; on a daily work card to log for that project (the card is already linked to a project).
+            </p>
+          )}
           {activeProject && (
             <div className="space-y-4">
               {/* Date and Work Type */}
@@ -1718,22 +1964,33 @@ export default function ManagerOperationsPage() {
                 </div>
 
                 {/* Work Type */}
-                <div>
+                <div className="space-y-1">
                   <label className="text-xs text-muted-foreground mb-1 block">
                     Work Type <span className="text-destructive">*</span>
                   </label>
-                  <Select value={logWorkType} onValueChange={handleChangeLogWorkType}>
+                  <div className="flex gap-2">
+                    <Select value={logWorkType} onValueChange={handleChangeLogWorkType}>
                       <SelectTrigger className="w-full">
                         <SelectValue placeholder="Select work type" />
                       </SelectTrigger>
                       <SelectContent>
-                        {WORK_TYPES.map((type) => (
+                        {workTypesList.map((type) => (
                           <SelectItem key={type} value={type}>
                             {type}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => { setCustomWorkTypeName(''); setAddCustomWorkTypeOpen(true); }}
+                      className="shrink-0"
+                    >
+                      Add new
+                    </Button>
+                  </div>
                 </div>
               </div>
 
@@ -1780,6 +2037,39 @@ export default function ManagerOperationsPage() {
                 </div>
               )}
 
+              {/* Containers used - only for watering */}
+              {logWorkType === 'Watering' && (
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">
+                    Containers used (e.g. water containers)
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    className="fv-input w-full"
+                    value={logWateringContainers}
+                    onChange={(e) => setLogWateringContainers(e.target.value)}
+                    placeholder="e.g. 2, 0.5, 1/2"
+                  />
+                </div>
+              )}
+
+              {/* Tying of crops: used ropes or sacks */}
+              {logWorkType === 'Tying of crops' && (
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Used</label>
+                  <Select value={logTyingUsedType} onValueChange={(v) => { setLogTyingUsedType(v as 'ropes' | 'sacks'); setLogInputs((prev) => prev.map((u) => ({ ...u, category: v as InventoryCategory, itemId: '' }))); }}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ropes">Ropes</SelectItem>
+                      <SelectItem value="sacks">Sacks</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
               {/* Total Amount (auto-calculated) */}
               {logNumberOfPeople && logRatePerPerson && (
                 <div className="text-sm text-muted-foreground">
@@ -1791,19 +2081,24 @@ export default function ManagerOperationsPage() {
               )}
 
               {/* Inputs Used - Show based on work type */}
-              {(logWorkType === 'Spraying' || logWorkType === 'Fertilizer application' || logWorkType === 'Other') && (
+              {(logWorkType === 'Spraying' || logWorkType === 'Fertilizer application' || logWorkType === 'Tying of crops' || logWorkType === 'Other') && (
                 <div>
                   <label className="text-xs text-muted-foreground mb-1 block">
                     {logWorkType === 'Spraying' && 'Chemicals Used'}
                     {logWorkType === 'Fertilizer application' && 'Fertilizer Used'}
+                    {logWorkType === 'Tying of crops' && (logTyingUsedType === 'ropes' ? 'Ropes Used' : 'Sacks Used')}
                     {logWorkType === 'Other' && 'Inputs Used'}
                     {' '}(optional)
                   </label>
                   <div className="space-y-2">
                     {logInputs.map((usage) => {
+                      const categoryForFilter = logWorkType === 'Tying of crops' ? logTyingUsedType : usage.category;
                       const itemOptions = companyInventory.filter(
-                        (i) => i.companyId === activeProject.companyId && i.category === usage.category,
+                        (i) =>
+                          i.companyId === activeProject.companyId &&
+                          (i.category === categoryForFilter || (categoryForFilter === 'diesel' && i.category === 'fuel')),
                       );
+                      const selectedItem = usage.itemId ? companyInventory.find((i) => i.id === usage.itemId) : null;
                       return (
                         <div
                           key={usage.id}
@@ -1822,6 +2117,8 @@ export default function ManagerOperationsPage() {
                                             ...u,
                                             category: val as InventoryCategory,
                                             itemId: '',
+                                            litres: '',
+                                            kgs: '',
                                           }
                                         : u,
                                     ),
@@ -1832,26 +2129,23 @@ export default function ManagerOperationsPage() {
                                   <SelectValue placeholder="Select category" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  {logWorkType === 'Spraying' && (
-                                    <>
-                                      <SelectItem value="chemical">Chemical</SelectItem>
-                                      <SelectItem value="diesel">Diesel</SelectItem>
-                                    </>
-                                  )}
-                                  {logWorkType === 'Fertilizer application' && (
-                                    <>
-                                      <SelectItem value="fertilizer">Fertilizer</SelectItem>
-                                      <SelectItem value="diesel">Diesel</SelectItem>
-                                    </>
-                                  )}
-                                  {logWorkType === 'Other' && (
-                                    <>
-                                      <SelectItem value="fertilizer">Fertilizer</SelectItem>
-                                      <SelectItem value="chemical">Chemical</SelectItem>
-                                      <SelectItem value="diesel">Diesel</SelectItem>
-                                      <SelectItem value="materials">Materials</SelectItem>
-                                    </>
-                                  )}
+                                  {(() => {
+                                    const categoriesToShow = logWorkType === 'Tying of crops'
+                                      ? inventoryCategoriesFromStock.filter((c) => c === 'ropes' || c === 'sacks')
+                                      : inventoryCategoriesFromStock;
+                                    if (categoriesToShow.length === 0) {
+                                      return (
+                                        <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                                          {logWorkType === 'Tying of crops' ? 'Add ropes or sacks in Inventory first' : 'No inventory categories yet'}
+                                        </div>
+                                      );
+                                    }
+                                    return categoriesToShow.map((cat) => (
+                                      <SelectItem key={cat} value={cat}>
+                                        {getInventoryCategoryLabel(cat)}
+                                      </SelectItem>
+                                    ));
+                                  })()}
                                 </SelectContent>
                               </Select>
                             </div>
@@ -1887,21 +2181,98 @@ export default function ManagerOperationsPage() {
                                 </SelectContent>
                               </Select>
                             </div>
-                            <div className="space-y-1">
-                              <label className="text-[11px] text-muted-foreground">Quantity</label>
-                              <input
-                                type="text"
-                                className="fv-input h-8 text-xs"
-                                value={usage.quantity}
-                                onChange={(e) =>
-                                  setLogInputs((prev) =>
-                                    prev.map((u) =>
-                                      u.id === usage.id ? { ...u, quantity: e.target.value } : u,
-                                    ),
-                                  )
-                                }
-                                placeholder="e.g., 5L, 10kg"
-                              />
+                            <div className="space-y-1 flex flex-col gap-1">
+                              {(usage.category === 'fuel' || usage.category === 'diesel') && (
+                                <>
+                                  <label className="text-[11px] text-muted-foreground">Containers</label>
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    className="fv-input h-8 text-xs"
+                                    value={usage.quantity}
+                                    onChange={(e) =>
+                                      setLogInputs((prev) =>
+                                        prev.map((u) =>
+                                          u.id === usage.id ? { ...u, quantity: e.target.value } : u,
+                                        ),
+                                      )
+                                    }
+                                    placeholder="e.g. 2, 0.5, 1/2"
+                                  />
+                                  <label className="text-[11px] text-muted-foreground">Litres (optional)</label>
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    className="fv-input h-8 text-xs"
+                                    value={usage.litres ?? ''}
+                                    onChange={(e) =>
+                                      setLogInputs((prev) =>
+                                        prev.map((u) =>
+                                          u.id === usage.id ? { ...u, litres: e.target.value } : u,
+                                        ),
+                                      )
+                                    }
+                                    placeholder="e.g. 20"
+                                  />
+                                </>
+                              )}
+                              {usage.category === 'fertilizer' && (
+                                <>
+                                  <label className="text-[11px] text-muted-foreground">Bags</label>
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    className="fv-input h-8 text-xs"
+                                    value={usage.quantity}
+                                    onChange={(e) =>
+                                      setLogInputs((prev) =>
+                                        prev.map((u) =>
+                                          u.id === usage.id ? { ...u, quantity: e.target.value } : u,
+                                        ),
+                                      )
+                                    }
+                                    placeholder="e.g. 2, 0.5, 1/2"
+                                  />
+                                  <label className="text-[11px] text-muted-foreground">Kgs (optional)</label>
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    className="fv-input h-8 text-xs"
+                                    value={usage.kgs ?? ''}
+                                    onChange={(e) =>
+                                      setLogInputs((prev) =>
+                                        prev.map((u) =>
+                                          u.id === usage.id ? { ...u, kgs: e.target.value } : u,
+                                        ),
+                                      )
+                                    }
+                                    placeholder="e.g. 50"
+                                  />
+                                </>
+                              )}
+                              {(usage.category === 'chemical' || usage.category === 'materials') && (
+                                <>
+                                  <label className="text-[11px] text-muted-foreground">
+                                    {selectedItem?.packagingType === 'box'
+                                      ? 'Boxes'
+                                      : 'Units'}
+                                  </label>
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    className="fv-input h-8 text-xs"
+                                    value={usage.quantity}
+                                    onChange={(e) =>
+                                      setLogInputs((prev) =>
+                                        prev.map((u) =>
+                                          u.id === usage.id ? { ...u, quantity: e.target.value } : u,
+                                        ),
+                                      )
+                                    }
+                                    placeholder="e.g. 2, 0.5, 1/2"
+                                  />
+                                </>
+                              )}
                             </div>
                           </div>
                           <button
@@ -1917,17 +2288,23 @@ export default function ManagerOperationsPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        const defaultCategory = 
-                          logWorkType === 'Spraying' ? 'chemical' :
-                          logWorkType === 'Fertilizer application' ? 'fertilizer' :
-                          'fertilizer';
+                        const preferred =
+                          logWorkType === 'Spraying' ? 'chemical'
+                          : logWorkType === 'Fertilizer application' ? 'fertilizer'
+                          : logWorkType === 'Tying of crops' ? logTyingUsedType
+                          : 'fertilizer';
+                        const defaultCategory = inventoryCategoriesFromStock.includes(preferred as InventoryCategory)
+                          ? (preferred as InventoryCategory)
+                          : (inventoryCategoriesFromStock[0] ?? preferred as InventoryCategory);
                         setLogInputs([
                           ...logInputs,
                           {
                             id: Date.now().toString(),
-                            category: defaultCategory as InventoryCategory,
+                            category: defaultCategory,
                             itemId: '',
                             quantity: '',
+                            litres: '',
+                            kgs: '',
                           },
                         ]);
                       }}
@@ -1969,9 +2346,58 @@ export default function ManagerOperationsPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Add new work type (custom category) */}
+      <Dialog open={addCustomWorkTypeOpen} onOpenChange={setAddCustomWorkTypeOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Add new category</DialogTitle>
+            <DialogDescription>
+              Add a custom work category. It will appear in the Work Type list for everyone in your company.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <input
+              type="text"
+              className="fv-input w-full"
+              value={customWorkTypeName}
+              onChange={(e) => setCustomWorkTypeName(e.target.value)}
+              placeholder="e.g. Pruning, Staking"
+            />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setAddCustomWorkTypeOpen(false)}>Cancel</Button>
+              <Button
+                disabled={!customWorkTypeName.trim() || savingCustomWorkType}
+                onClick={async () => {
+                  const name = customWorkTypeName.trim();
+                  if (!name || !user?.companyId) return;
+                  setSavingCustomWorkType(true);
+                  try {
+                    const existing = (company as { customWorkTypes?: string[] } | undefined)?.customWorkTypes ?? [];
+                    if (existing.includes(name)) {
+                      setLogWorkType(name);
+                      setAddCustomWorkTypeOpen(false);
+                      return;
+                    }
+                    await updateCompany(user.companyId, { customWorkTypes: [...existing, name] });
+                    queryClient.invalidateQueries({ queryKey: ['company', user.companyId] });
+                    setLogWorkType(name);
+                    setAddCustomWorkTypeOpen(false);
+                    setCustomWorkTypeName('');
+                  } finally {
+                    setSavingCustomWorkType(false);
+                  }
+                }}
+              >
+                {savingCustomWorkType ? 'Adding...' : 'Add'}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Stat Card Drawer */}
       <Drawer open={drawerOpen} onOpenChange={setDrawerOpen}>
-        <DrawerContent className="max-h-[80vh]">
+        <DrawerContent className="max-h-[80vh]" resizable defaultHeightVh={50}>
           <DrawerHeader>
             <DrawerTitle>
               {drawerType === 'total' && 'All Work Logs'}
@@ -2025,15 +2451,17 @@ export default function ManagerOperationsPage() {
                         <p className="text-xs text-muted-foreground mt-1">
                           {formatLogDate(log.date)} • {log.stageName}
                         </p>
-                        <p className="text-sm mt-1">
-                          {log.numberOfPeople} people
-                          {log.ratePerPerson && ` @ KES ${log.ratePerPerson.toLocaleString()}`}
-                          {log.totalPrice && (
-                            <span className="ml-2 font-semibold text-foreground">
-                              • Total: KES {log.totalPrice.toLocaleString()}
-                            </span>
-                          )}
-                        </p>
+                        {showPeopleSection && (
+                          <p className="text-sm mt-1">
+                            {log.numberOfPeople} people
+                            {log.ratePerPerson && ` @ KES ${log.ratePerPerson.toLocaleString()}`}
+                          </p>
+                        )}
+                        {log.totalPrice && (
+                          <p className="text-sm mt-1 font-semibold text-foreground">
+                            Total: KES {log.totalPrice.toLocaleString()}
+                          </p>
+                        )}
                       </div>
                       <Badge
                         className={cn(

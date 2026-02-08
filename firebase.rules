@@ -34,6 +34,22 @@ service cloud.firestore {
         && get(userRef).data.get('role', null) == 'developer';
     }
 
+    function isCompanyAdmin() {
+      let userRef = /databases/$(database)/documents/users/$(request.auth.uid);
+      return isSignedIn() && exists(userRef)
+        && (get(userRef).data.get('role', null) == 'company-admin'
+            || get(userRef).data.get('role', null) == 'company_admin');
+    }
+
+    function isManager() {
+      let userRef = /databases/$(database)/documents/users/$(request.auth.uid);
+      return isSignedIn() && exists(userRef) && (
+        get(userRef).data.get('role', null) == 'manager'
+        || get(userRef).data.get('employeeRole', null) == 'manager'
+        || get(userRef).data.get('employeeRole', null) == 'operations-manager'
+      );
+    }
+
     // --- Users ---
 
     match /users/{userId} {
@@ -148,11 +164,15 @@ service cloud.firestore {
     }
 
     // --- Employees ---
-
+    // Create: company-admin or manager (same company only), or developer. Requester's user doc must have companyId for company match.
     match /employees/{employeeId} {
       allow read: if isSignedIn();
       allow update, delete: if isSignedIn() && (matchesCompanyOnDoc() || isDeveloper());
-      allow create: if isSignedIn() && (matchesCompanyOnCreate() || isDeveloper());
+      allow create: if isSignedIn() && (
+        (isCompanyAdmin() && request.resource.data.get('companyId', null) == userCompanyId())
+        || (isManager() && request.resource.data.get('companyId', null) == userCompanyId())
+        || isDeveloper()
+      );
     }
 
     // --- Deliveries ---
@@ -199,6 +219,13 @@ service cloud.firestore {
     match /auditLogs/{logId} {
       allow read: if isDeveloper();
       allow create: if isDeveloper();
+      allow update, delete: if false;
+    }
+
+    // --- Inventory audit logs: who did what (restock/deduct/delete/add); company users create and read their own ---
+    match /inventoryAuditLogs/{logId} {
+      allow create: if isSignedIn() && request.resource.data.get('companyId', null) == userCompanyId();
+      allow read: if isSignedIn();
       allow update, delete: if false;
     }
 

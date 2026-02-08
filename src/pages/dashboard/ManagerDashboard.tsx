@@ -3,7 +3,7 @@ import { Plus, Wrench, CheckCircle, Calendar, TrendingUp, Users, DollarSign, Spr
 import { useProject } from '@/contexts/ProjectContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCollection } from '@/hooks/useCollection';
-import { WorkLog, Expense, CropStage, SeasonChallenge, InventoryUsage } from '@/types';
+import { WorkLog, Expense, CropStage, SeasonChallenge, InventoryUsage, Employee } from '@/types';
 import { LuxuryStatCard } from '@/components/dashboard/LuxuryStatCard';
 import { SimpleStatCard } from '@/components/dashboard/SimpleStatCard';
 import { cn } from '@/lib/utils';
@@ -43,16 +43,28 @@ export function ManagerDashboard() {
   const { data: allStages = [] } = useCollection<CropStage>('projectStages', 'projectStages');
   const { data: allChallenges = [] } = useCollection<SeasonChallenge>('seasonChallenges', 'seasonChallenges');
   const { data: allInventoryUsage = [] } = useCollection<InventoryUsage>('inventoryUsage', 'inventoryUsage');
+  const { data: allEmployees = [] } = useCollection<Employee>('employees', 'employees');
 
-  // Filter by project
+  // Work can be allocated to manager by user id (auth uid) or by employee doc id (operations-manager). Match both.
+  const managerIdsForCurrentUser = useMemo(() => {
+    if (!user) return new Set<string>();
+    const ids = new Set<string>();
+    ids.add(user.id);
+    const myEmployee = allEmployees.find((e) => (e as Employee & { authUserId?: string }).authUserId === user.id);
+    if (myEmployee) ids.add(myEmployee.id);
+    return ids;
+  }, [user, allEmployees]);
+
+  // Filter by project and manager (current user as manager, by either id)
   const projectWorkLogs = useMemo(() => {
-    if (!activeProject) return [];
+    if (!activeProject || !user) return [];
     return allWorkLogs.filter(
-      w => w.projectId === activeProject.id && 
+      w => w.projectId === activeProject.id &&
       w.companyId === activeProject.companyId &&
-      w.managerId === user?.id
+      w.managerId != null &&
+      managerIdsForCurrentUser.has(w.managerId)
     );
-  }, [allWorkLogs, activeProject, user?.id]);
+  }, [allWorkLogs, activeProject, user, managerIdsForCurrentUser]);
 
   const todayWorkLogs = useMemo(() => {
     return projectWorkLogs.filter(log => {

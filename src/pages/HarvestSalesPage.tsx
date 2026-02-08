@@ -531,8 +531,8 @@ export default function HarvestSalesPage() {
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="kg">Kilograms (kg)</SelectItem>
-                              <SelectItem value="crate-big">Big crate</SelectItem>
-                              <SelectItem value="crate-small">Small crate</SelectItem>
+                              <SelectItem value="crate-big">Big wooden box</SelectItem>
+                              <SelectItem value="crate-small">Small wooden box</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
@@ -671,7 +671,7 @@ export default function HarvestSalesPage() {
                         )}
                       </div>
                       <div className="space-y-1">
-                        <label className="text-sm font-medium text-foreground">Crate type</label>
+                        <label className="text-sm font-medium text-foreground">Wooden boxes</label>
                         <Select
                           value={harvestCrateType}
                           onValueChange={(val) =>
@@ -679,11 +679,11 @@ export default function HarvestSalesPage() {
                           }
                         >
                           <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select crate" />
+                            <SelectValue placeholder="Select wooden box" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="big">Big crate</SelectItem>
-                            <SelectItem value="small">Small crate</SelectItem>
+                            <SelectItem value="big">Big wooden box</SelectItem>
+                            <SelectItem value="small">Small wooden box</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -880,7 +880,7 @@ export default function HarvestSalesPage() {
                             <SelectValue placeholder="Select unit" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="crates">Crates (big / small)</SelectItem>
+                            <SelectItem value="crates">Wooden boxes (big / small)</SelectItem>
                             <SelectItem value="kg">Kilograms (kg)</SelectItem>
                           </SelectContent>
                         </Select>
@@ -889,7 +889,7 @@ export default function HarvestSalesPage() {
                       {saleMode === 'crates' && (
                         <>
                           <div className="space-y-1">
-                            <label className="text-sm font-medium text-foreground">Crate size</label>
+                            <label className="text-sm font-medium text-foreground">Wooden box size</label>
                             <Select
                               value={crateSize}
                               onValueChange={(val) =>
@@ -897,11 +897,11 @@ export default function HarvestSalesPage() {
                               }
                             >
                               <SelectTrigger className="w-full">
-                                <SelectValue placeholder="Select crate size" />
+                                <SelectValue placeholder="Select wooden box size" />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="big">Big crate</SelectItem>
-                                <SelectItem value="small">Small crate</SelectItem>
+                                <SelectItem value="big">Big wooden box</SelectItem>
+                                <SelectItem value="small">Small wooden box</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
@@ -909,7 +909,7 @@ export default function HarvestSalesPage() {
                           <div className="space-y-2">
                             <div className="flex items-center justify-between">
                               <p className="text-sm font-medium text-foreground">
-                                Price bands (crates × price per crate)
+                                Price bands (wooden boxes × price per box)
                               </p>
                               <button
                                 type="button"

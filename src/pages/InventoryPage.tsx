@@ -1,21 +1,23 @@
-import React, { useMemo, useState } from 'react';
-import { Plus, Search, Package, MoreHorizontal, AlertTriangle, ShoppingCart } from 'lucide-react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
+import { Plus, Search, Package, MoreHorizontal, AlertTriangle, ShoppingCart, Minus, Trash2, ScrollText } from 'lucide-react';
 import { useProject } from '@/contexts/ProjectContext';
 import { cn } from '@/lib/utils';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp, doc, writeBatch, increment, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, writeBatch, increment, updateDoc, deleteDoc } from 'firebase/firestore';
 import { useCollection } from '@/hooks/useCollection';
-import { InventoryItem, InventoryCategory, ExpenseCategory, Supplier, CropType, InventoryCategoryItem, NeededItem } from '@/types';
+import { InventoryItem, InventoryCategory, ExpenseCategory, Supplier, CropType, InventoryCategoryItem, NeededItem, ChemicalPackagingType, FuelType } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { SimpleStatCard } from '@/components/dashboard/SimpleStatCard';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { formatDate } from '@/lib/dateUtils';
+import { toast } from 'sonner';
 import {
   Dialog,
   DialogTrigger,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
 import {
@@ -32,6 +34,15 @@ import {
   DrawerTitle,
   DrawerDescription,
 } from '@/components/ui/drawer';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Checkbox } from '@/components/ui/checkbox';
+import { createInventoryAuditLog } from '@/services/inventoryAuditLogService';
+import { parseQuantityOrFraction } from '@/lib/utils';
 
 export default function InventoryPage() {
   const { activeProject } = useProject();
@@ -52,8 +63,8 @@ export default function InventoryPage() {
     return allCategories.filter((cat) => cat.companyId === user.companyId);
   }, [allCategories, user?.companyId]);
   
-  // Default categories if none exist
-  const defaultCategories = ['fertilizer', 'chemical', 'diesel', 'materials'];
+  // Default categories if none exist (fuel replaces diesel in display)
+  const defaultCategories = ['fertilizer', 'chemical', 'fuel', 'materials', 'sacks', 'ropes', 'wooden-crates', 'seeds'];
   const availableCategories = useMemo(() => {
     const categoryNames = categories.map((cat) => cat.name.toLowerCase());
     const defaults = defaultCategories.filter((def) => !categoryNames.includes(def));
@@ -70,12 +81,16 @@ export default function InventoryPage() {
   const formatCurrency = (amount: number) => `KES ${amount.toLocaleString()}`;
 
   const getCategoryIcon = (category: string) => {
-    // Personalized icons for each category
     const icons: Record<string, string> = {
       fertilizer: '🌾',
       chemical: '🧪',
+      fuel: '⛽',
       diesel: '⛽',
       materials: '🔧',
+      sacks: '🛍️',
+      ropes: '🪢',
+      'wooden-crates': '📦',
+      seeds: '🌱',
     };
     return <span className="text-2xl">{icons[category.toLowerCase()] || '📦'}</span>;
   };
@@ -84,14 +99,52 @@ export default function InventoryPage() {
     const colors: Record<string, string> = {
       fertilizer: 'bg-fv-gold-soft text-fv-olive',
       chemical: 'bg-fv-warning/10 text-fv-warning',
+      fuel: 'bg-fv-info/10 text-fv-info',
       diesel: 'bg-fv-info/10 text-fv-info',
       materials: 'bg-primary/10 text-primary',
+      sacks: 'bg-amber-100 text-amber-800',
+      ropes: 'bg-slate-200 text-slate-800',
+      'wooden-crates': 'bg-amber-50 text-amber-900',
+      seeds: 'bg-emerald-100 text-emerald-800',
     };
     return colors[category] || colors.other;
   };
 
+  const getCategoryDisplayName = (cat: string) => {
+    if (cat === 'wooden-crates') return 'Wooden crates';
+    if (cat === 'diesel') return 'Fuel';
+    if (cat === 'seeds') return 'Seeds';
+    return cat.charAt(0).toUpperCase() + cat.slice(1);
+  };
+
   const isLowStock = (item: InventoryItem) =>
     item.quantity < (item.minThreshold ?? 10);
+
+  const formatInventoryQuantity = (item: InventoryItem) => {
+    const cat = (item.category || '').toLowerCase();
+    const it = item as InventoryItem & { packagingType?: string; unitsPerBox?: number; fuelType?: string; containers?: number; litres?: number; bags?: number; kgs?: number };
+    if (cat === 'chemical' && it.packagingType === 'box' && it.unitsPerBox) {
+      const total = item.quantity * it.unitsPerBox;
+      return `${item.quantity} boxes (${it.unitsPerBox}/box) = ${total} units`;
+    }
+    if (cat === 'chemical' && it.packagingType === 'single') return `${item.quantity} units`;
+    if ((cat === 'fuel' || cat === 'diesel') && (it.containers != null || it.fuelType)) {
+      const sub = it.fuelType ? ` ${it.fuelType}` : '';
+      const lit = it.litres != null ? `, ${it.litres} L` : '';
+      return `${item.quantity} containers${sub}${lit}`;
+    }
+    if (cat === 'fertilizer' && (it.bags != null || item.unit === 'bags')) {
+      const b = it.bags ?? item.quantity;
+      const k = it.kgs != null ? `, ${it.kgs} kg` : '';
+      return `${b} bags${k}`;
+    }
+    const itBox = item as InventoryItem & { boxSize?: 'big' | 'small' };
+    if (cat === 'wooden-crates' && itBox.boxSize) {
+      const size = itBox.boxSize === 'big' ? 'Big box' : 'Small box';
+      return `${item.quantity} ${size}`;
+    }
+    return `${item.quantity} ${item.unit}`;
+  };
 
   const [addOpen, setAddOpen] = useState(false);
   const [name, setName] = useState('');
@@ -101,10 +154,23 @@ export default function InventoryPage() {
   const [quantity, setQuantity] = useState('');
   const [unit, setUnit] = useState('kg');
   const [pricePerUnit, setPricePerUnit] = useState('');
+  const [totalAmount, setTotalAmount] = useState('');
   const [saving, setSaving] = useState(false);
   const [selectedCrops, setSelectedCrops] = useState<CropType[]>([]);
+  const [seedCrop, setSeedCrop] = useState<CropType | ''>('');
   const [selectedSupplierId, setSelectedSupplierId] = useState('');
+  const [pickupDate, setPickupDate] = useState('');
   const [countAsExpense, setCountAsExpense] = useState(false);
+
+  // Category-specific fields
+  const [chemicalPackaging, setChemicalPackaging] = useState<ChemicalPackagingType>('box');
+  const [unitsPerBox, setUnitsPerBox] = useState('');
+  const [fuelType, setFuelType] = useState<FuelType>('diesel');
+  const [containers, setContainers] = useState('');
+  const [litres, setLitres] = useState('');
+  const [bags, setBags] = useState('');
+  const [kgs, setKgs] = useState('');
+  const [boxSize, setBoxSize] = useState<'big' | 'small'>('big');
 
   const [restockOpen, setRestockOpen] = useState(false);
   const [restockItem, setRestockItem] = useState<InventoryItem | null>(null);
@@ -112,8 +178,68 @@ export default function InventoryPage() {
   const [restockTotalCost, setRestockTotalCost] = useState('');
   const [restockSaving, setRestockSaving] = useState(false);
 
+  const [deductOpen, setDeductOpen] = useState(false);
+  const [deductItem, setDeductItem] = useState<InventoryItem | null>(null);
+  const [deductQuantity, setDeductQuantity] = useState('');
+  const [deductReason, setDeductReason] = useState('');
+  const [deductSaving, setDeductSaving] = useState(false);
+
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteItem, setDeleteItem] = useState<InventoryItem | null>(null);
+  const [deleteSaving, setDeleteSaving] = useState(false);
+
+  const logInventoryAudit = useCallback(
+    async (
+      actionType: 'RESTOCK' | 'DEDUCT' | 'DELETE',
+      targetId: string,
+      itemName: string,
+      metadata?: Record<string, unknown>,
+    ) => {
+      if (!user?.companyId || !user?.id) return;
+      try {
+        await createInventoryAuditLog({
+          companyId: user.companyId,
+          actorUid: user.id,
+          actorEmail: user.email ?? '',
+          actorName: user.name,
+          actionType,
+          targetId,
+          metadata: { itemName, ...metadata },
+        });
+      } catch (e) {
+        console.error('Failed to write inventory audit log', e);
+      }
+    },
+    [user],
+  );
+
   const [cropFilter, setCropFilter] = useState<'all' | CropType>('all');
+  const [inventoryAuditOpen, setInventoryAuditOpen] = useState(false);
+
+  /** Effective quantity for add-item form (used for total amount = qty * price per unit). */
+  const effectiveQuantityForAdd = useMemo(() => {
+    const cat = category.toLowerCase();
+    if (cat === 'fertilizer') return Number(quantity || '0') || 0;
+    if (cat === 'fuel' || cat === 'diesel') return Number(containers || '0') || 0;
+    if (cat === 'chemical') return Number(quantity || '0') || 0;
+    if (cat === 'wooden-crates' || cat === 'seeds') return Number(quantity || '0') || 0;
+    return Number(quantity || '0') || 0;
+  }, [category, quantity, containers]);
+
+  // Keep Price per unit and Total amount in sync in real time
+  useEffect(() => {
+    if (effectiveQuantityForAdd <= 0) return;
+    const price = Number(pricePerUnit || '0');
+    const total = price * effectiveQuantityForAdd;
+    setTotalAmount(total.toFixed(2));
+  }, [effectiveQuantityForAdd, pricePerUnit]);
+
   const [neededOpen, setNeededOpen] = useState(false);
+  const [neededItemName, setNeededItemName] = useState('');
+  const [neededItemCategory, setNeededItemCategory] = useState('');
+  const [neededItemQuantity, setNeededItemQuantity] = useState('');
+  const [neededItemUnit, setNeededItemUnit] = useState('kg');
+  const [neededItemSaving, setNeededItemSaving] = useState(false);
   const [categoryDrawerOpen, setCategoryDrawerOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
@@ -139,6 +265,66 @@ export default function InventoryPage() {
           return true;
         });
   
+  const { data: inventoryAuditLogs = [], isLoading: inventoryAuditLoading } = useQuery({
+    queryKey: ['inventory-audit-logs', inventoryAuditOpen],
+    queryFn: () => getInventoryAuditLogs(200),
+    enabled: inventoryAuditOpen,
+  });
+  const companyInventoryAuditLogs = useMemo(() => {
+    if (!user?.companyId) return [];
+    return inventoryAuditLogs.filter((log) => log.companyId === user.companyId);
+  }, [inventoryAuditLogs, user?.companyId]);
+
+  /** Format audit log for display: human-readable action label and details. */
+  const formatAuditLogDisplay = useCallback(
+    (log: { actionType: string; metadata?: Record<string, unknown> }) => {
+      const meta = (log.metadata || {}) as Record<string, unknown>;
+      const actionLabel =
+        log.actionType === 'RESTOCK'
+          ? 'Restocked'
+          : log.actionType === 'DEDUCT'
+            ? 'Deducted'
+            : log.actionType === 'DELETE'
+              ? 'Deleted'
+              : log.actionType === 'ADD_ITEM'
+                ? 'Item added'
+                : log.actionType === 'ADD_NEEDED'
+                  ? 'Added to needed'
+                  : log.actionType;
+      let details = '';
+      if (log.actionType === 'RESTOCK') {
+        const qty = meta.quantityAdded != null ? String(meta.quantityAdded) : '';
+        const unit = (meta.unit as string) || '';
+        const cost = meta.totalCost != null ? Number(meta.totalCost) : null;
+        if (qty && unit) details = `Added ${qty} ${unit}.`;
+        if (cost != null && details) details += ` Total cost: KES ${cost.toLocaleString()}.`;
+        else if (cost != null) details = `Total cost: KES ${cost.toLocaleString()}.`;
+      } else if (log.actionType === 'DEDUCT') {
+        const qty = meta.quantityDeducted != null ? String(meta.quantityDeducted) : '';
+        const unit = (meta.unit as string) || '';
+        const reason = (meta.reason as string) || '';
+        if (qty && unit) details = `Deducted ${qty} ${unit}.`;
+        if (reason) details += details ? ` Reason: ${reason}.` : `Reason: ${reason}.`;
+      } else if (log.actionType === 'DELETE') {
+        details = 'Item removed from inventory.';
+      } else if (log.actionType === 'ADD_ITEM') {
+        const qty = meta.quantity != null ? String(meta.quantity) : '';
+        const unit = (meta.unit as string) || '';
+        const category = (meta.category as string) || '';
+        if (qty && unit) details = `Initial quantity: ${qty} ${unit}.`;
+        if (category) details += details ? ` Category: ${category}.` : `Category: ${category}.`;
+      } else if (log.actionType === 'ADD_NEEDED') {
+        const qty = meta.quantity != null ? String(meta.quantity) : '';
+        const unit = (meta.unit as string) || '';
+        const category = (meta.category as string) || '';
+        if (qty && unit) details = `Quantity needed: ${qty} ${unit}.`;
+        if (category) details += details ? ` Category: ${category}.` : `Category: ${category}.`;
+      }
+      return { actionLabel, details: details || '—' };
+    },
+    [],
+  );
+
   // Filter needed items for current company/project
   const filteredNeededItems = useMemo(() => {
     if (!user?.companyId) return [];
@@ -193,7 +379,32 @@ export default function InventoryPage() {
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
     e.stopPropagation(); // Prevent event from bubbling up
-    if (!activeProject) return;
+    const companyId = user?.companyId ?? activeProject?.companyId;
+    if (!companyId) {
+      toast.error('You must be in a company to add inventory.');
+      return;
+    }
+    const cat = category.toLowerCase();
+    if (cat === 'chemical' && chemicalPackaging === 'box' && !Number(unitsPerBox || '0')) {
+      toast.error('Enter units per box (e.g. bottles or packets per box)');
+      return;
+    }
+    if ((cat === 'fuel' || cat === 'diesel') && !Number(containers || '0')) {
+      toast.error('Enter number of containers (mtungi)');
+      return;
+    }
+    if (cat === 'fertilizer' && !Number(quantity || '0')) {
+      toast.error('Enter quantity for fertilizer');
+      return;
+    }
+    if (cat === 'wooden-crates' && !Number(quantity || '0')) {
+      toast.error('Enter number of wooden boxes');
+      return;
+    }
+    if (cat === 'seeds' && !Number(quantity || '0')) {
+      toast.error('Enter quantity for seeds');
+      return;
+    }
     setSaving(true);
     try {
       // If a new category was entered, add it first
@@ -207,56 +418,134 @@ export default function InventoryPage() {
         );
         
         if (!exists) {
-          // Add new category to Firebase
           await addDoc(collection(db, 'inventoryCategories'), {
             name: categoryName,
-            companyId: user?.companyId || activeProject.companyId,
+            companyId: user?.companyId ?? activeProject?.companyId,
             createdAt: serverTimestamp(),
           });
         }
         finalCategory = normalizedName;
       }
       
+      const cat = finalCategory.toLowerCase();
       const data: Record<string, unknown> = {
         name,
-        category: finalCategory,
-        quantity: Number(quantity || '0'),
-        unit,
+        category: (cat === 'fuel' || cat === 'diesel') ? 'fuel' : cat,
+        quantity: 0,
+        unit: 'kg',
         pricePerUnit: Number(pricePerUnit || '0'),
-        companyId: activeProject.companyId,
+        companyId,
         lastUpdated: serverTimestamp(),
         createdAt: serverTimestamp(),
       };
+
+      if (cat === 'chemical') {
+        const isBox = chemicalPackaging === 'box';
+        data.packagingType = chemicalPackaging;
+        if (isBox) {
+          const numBoxes = Number(quantity || '0');
+          const perBox = Number(unitsPerBox || '0');
+          data.quantity = numBoxes;
+          data.unit = 'boxes';
+          data.unitsPerBox = perBox;
+        } else {
+          data.quantity = Number(quantity || '0');
+          data.unit = 'units';
+        }
+        if (kgs.trim()) data.kgs = Number(kgs);
+      } else if (cat === 'fuel' || cat === 'diesel') {
+        const cont = Number(containers || '0');
+        const lit = litres.trim() ? Number(litres) : undefined;
+        data.quantity = cont;
+        data.unit = 'containers';
+        data.fuelType = cat === 'diesel' ? 'diesel' : fuelType;
+        data.containers = cont;
+        if (lit != null) data.litres = lit;
+      } else if (cat === 'fertilizer') {
+        const q = Number(quantity || '0');
+        const u = (unit || 'bags').toLowerCase();
+        data.quantity = q;
+        data.unit = u;
+        if (u === 'bags') {
+          data.bags = q;
+          if (kgs.trim()) data.kgs = Number(kgs);
+        }
+        if (u === 'kg') data.kgs = q;
+      } else if (cat === 'seeds') {
+        data.quantity = Number(quantity || '0');
+        data.unit = unit || 'packets';
+        if (seedCrop) data.cropTypes = [seedCrop];
+      } else {
+        data.quantity = Number(quantity || '0');
+        data.unit = unit;
+      }
 
       if (selectedSupplierId) {
         data.supplierId = selectedSupplierId;
         const supplier = suppliers.find((s) => s.id === selectedSupplierId);
         if (supplier?.name) data.supplierName = supplier.name;
+        if (pickupDate.trim()) data.pickupDate = pickupDate.trim();
       }
 
-      if (selectedCrops.length) {
+      if (cat !== 'seeds' && selectedCrops.length) {
         data.cropTypes = selectedCrops;
       }
 
-      await addDoc(collection(db, 'inventoryItems'), data);
+      const itemRef = await addDoc(collection(db, 'inventoryItems'), data);
+      if (user?.companyId && user?.id) {
+        await createInventoryAuditLog({
+          companyId: user.companyId,
+          actorUid: user.id,
+          actorEmail: user.email ?? '',
+          actorName: user.name,
+          actionType: 'ADD_ITEM',
+          targetId: itemRef.id,
+          metadata: { itemName: name, category: (cat === 'fuel' || cat === 'diesel') ? 'fuel' : cat, quantity: data.quantity, unit: data.unit },
+        });
+      }
 
       // Invalidate queries to refresh data immediately
       queryClient.invalidateQueries({ queryKey: ['inventoryItems'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-inventory'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory-audit-logs'] });
 
-      if (countAsExpense) {
-        const amount = Number(quantity || '0') * Number(pricePerUnit || '0');
+      if (countAsExpense && activeProject) {
+        let descQty = quantity;
+        let descUnit = unit;
+        if (cat === 'chemical' && chemicalPackaging === 'box' && unitsPerBox) {
+          descQty = quantity;
+          descUnit = `boxes (${unitsPerBox} per box)`;
+        } else if (cat === 'fuel') {
+          descQty = containers;
+          descUnit = litres.trim() ? `${containers} containers, ${litres} L` : 'containers';
+        } else if (cat === 'fertilizer') {
+          descQty = quantity;
+          descUnit = `${quantity} ${unit || 'bags'}`;
+        } else if (cat === 'wooden-crates') {
+          descQty = quantity;
+          descUnit = `${boxSize === 'big' ? 'Big' : 'Small'} wooden box`;
+        } else if (cat === 'seeds') {
+          descQty = quantity;
+          descUnit = `${quantity} ${unit || 'packets'}`;
+        }
+        const qtyNum = Number(quantity || '0') || Number(containers || '0');
+        const amount = qtyNum * Number(pricePerUnit || '0');
         const categoryMap: Record<string, ExpenseCategory> = {
           fertilizer: 'fertilizer',
           chemical: 'chemical',
+          fuel: 'fuel',
           diesel: 'fuel',
           materials: 'other',
+          sacks: 'other',
+          ropes: 'other',
+          'wooden-crates': 'other',
+          seeds: 'other',
         };
         const expenseData: Record<string, unknown> = {
           companyId: activeProject.companyId,
           projectId: activeProject.id,
           category: categoryMap[finalCategory] || 'other',
-          description: `Initial stock - ${name} (${quantity} ${unit})`,
+          description: `Initial stock - ${name} (${descQty} ${descUnit})`,
           amount,
           date: serverTimestamp(),
           synced: false,
@@ -276,9 +565,21 @@ export default function InventoryPage() {
       setQuantity('');
       setUnit('kg');
       setPricePerUnit('');
+      setTotalAmount('');
       setSelectedCrops([]);
+      setSeedCrop('');
       setSelectedSupplierId('');
+      setPickupDate('');
       setCountAsExpense(false);
+      setChemicalPackaging('box');
+      setUnitsPerBox('');
+      setFuelType('diesel');
+      setContainers('');
+      setLitres('');
+      setBags('');
+      setKgs('');
+      setBoxSize('big');
+      setAddOpen(false);
     } finally {
       setSaving(false);
     }
@@ -291,9 +592,79 @@ export default function InventoryPage() {
     setRestockOpen(true);
   };
 
+  const handleOpenDeduct = (item: InventoryItem) => {
+    setDeductItem(item);
+    setDeductQuantity('');
+    setDeductReason('');
+    setDeductOpen(true);
+  };
+
+  const handleDeduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!deductItem || !user?.companyId) return;
+    const qty = parseQuantityOrFraction(deductQuantity);
+    if (qty <= 0) {
+      toast.error('Enter a valid quantity to deduct.');
+      return;
+    }
+    if (qty > deductItem.quantity) {
+      toast.error(`Cannot deduct more than current stock (${deductItem.quantity} ${deductItem.unit}).`);
+      return;
+    }
+    setDeductSaving(true);
+    try {
+      const itemRef = doc(db, 'inventoryItems', deductItem.id);
+      await updateDoc(itemRef, {
+        quantity: increment(-qty),
+        lastUpdated: serverTimestamp(),
+      });
+      await logInventoryAudit('DEDUCT', deductItem.id, deductItem.name, {
+        quantityDeducted: qty,
+        unit: deductItem.unit,
+        reason: deductReason.trim() || undefined,
+      });
+      queryClient.invalidateQueries({ queryKey: ['inventoryItems'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory-audit-logs'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-inventory'] });
+      setDeductOpen(false);
+      setDeductItem(null);
+      toast.success('Quantity deducted.');
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to deduct.');
+    } finally {
+      setDeductSaving(false);
+    }
+  };
+
+  const handleConfirmDelete = (item: InventoryItem) => {
+    setDeleteItem(item);
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteItem || !user?.companyId) return;
+    setDeleteSaving(true);
+    try {
+      await deleteDoc(doc(db, 'inventoryItems', deleteItem.id));
+      await logInventoryAudit('DELETE', deleteItem.id, deleteItem.name, {});
+      queryClient.invalidateQueries({ queryKey: ['inventoryItems'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory-audit-logs'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-inventory'] });
+      setDeleteConfirmOpen(false);
+      setDeleteItem(null);
+      toast.success('Item deleted.');
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to delete item.');
+    } finally {
+      setDeleteSaving(false);
+    }
+  };
+
   const handleRestock = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeProject || !restockItem) return;
+    if (!restockItem) return;
     const qty = Number(restockQuantity || '0');
     const total = Number(restockTotalCost || '0');
     if (!qty || !total) return;
@@ -315,44 +686,49 @@ export default function InventoryPage() {
         quantityAdded: qty,
         unit: restockItem.unit,
         totalCost: total,
-        projectId: activeProject.id,
         date: serverTimestamp(),
         createdAt: serverTimestamp(),
       };
+      if (activeProject) purchaseData.projectId = activeProject.id;
       if (qty) purchaseData.pricePerUnit = total / qty;
       batch.set(purchaseRef, purchaseData);
 
-      const categoryMap: Record<InventoryCategory, ExpenseCategory> = {
-        fertilizer: 'fertilizer',
-        chemical: 'chemical',
-        diesel: 'fuel',
-        materials: 'other',
-      };
-
-      const expenseRef = doc(collection(db, 'expenses'));
-      batch.set(expenseRef, {
-        companyId: restockItem.companyId,
-        projectId: activeProject.id,
-        cropType: activeProject.cropType,
-        category: categoryMap[restockItem.category],
-        description: `Restock ${restockItem.name} (${qty} ${restockItem.unit})`,
-        amount: total,
-        date: serverTimestamp(),
-        // Optional linkage fields are omitted when unknown to avoid `undefined` values.
-        synced: false,
-        paid: false,
-        createdAt: serverTimestamp(),
-      });
+      if (activeProject) {
+        const categoryMap: Record<string, ExpenseCategory> = {
+          fertilizer: 'fertilizer',
+          chemical: 'chemical',
+          diesel: 'fuel',
+          fuel: 'fuel',
+          materials: 'other',
+          sacks: 'other',
+          ropes: 'other',
+          'wooden-crates': 'other',
+          seeds: 'other',
+        };
+        const expenseRef = doc(collection(db, 'expenses'));
+        batch.set(expenseRef, {
+          companyId: restockItem.companyId,
+          projectId: activeProject.id,
+          cropType: activeProject.cropType,
+          category: categoryMap[restockItem.category] ?? 'other',
+          description: `Restock ${restockItem.name} (${qty} ${restockItem.unit})`,
+          amount: total,
+          date: serverTimestamp(),
+          synced: false,
+          paid: false,
+          createdAt: serverTimestamp(),
+        });
+      }
 
       await batch.commit();
-      
-      // Invalidate queries to refresh data immediately
+      await logInventoryAudit('RESTOCK', restockItem.id, restockItem.name, { quantityAdded: qty, totalCost: total, unit: restockItem.unit });
       queryClient.invalidateQueries({ queryKey: ['inventoryItems'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory-audit-logs'] });
       queryClient.invalidateQueries({ queryKey: ['expenses'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-inventory'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-expenses'] });
-      
       setRestockOpen(false);
+      toast.success('Restocked successfully');
     } finally {
       setRestockSaving(false);
     }
@@ -398,156 +774,406 @@ export default function InventoryPage() {
               <DialogHeader>
                 <DialogTitle>Add Inventory Item</DialogTitle>
               </DialogHeader>
-              {!activeProject ? (
+              {!user?.companyId ? (
                 <p className="text-sm text-muted-foreground">
-                  Select a project first to add an inventory item.
+                  Sign in with a company account to add inventory items.
                 </p>
               ) : (
-                <form 
-                  onSubmit={handleAddItem} 
-                  className="space-y-4"
+                <form
+                  onSubmit={handleAddItem}
+                  className="space-y-6"
                   onKeyDown={(e) => {
-                    // Prevent Enter key from closing dialog if pressed in form
-                    if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
-                      // Allow normal form submission
-                    }
+                    if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {}
                   }}
                 >
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium text-foreground">Item name</label>
-                    <input
-                      className="fv-input"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium text-foreground">Crop scope (optional)</label>
-                    <p className="text-xs text-muted-foreground mb-1">
-                      Select the crops this item is used for. Leave all unchecked to make it available for all crops.
-                    </p>
-                    <div className="grid grid-cols-2 gap-2">
-                      {cropOptions.map((crop) => (
-                        <button
-                          key={crop}
-                          type="button"
-                          onClick={() => toggleCropSelection(crop)}
-                          className={cn(
-                            'flex items-center gap-2 rounded-md border px-2 py-1.5 text-xs',
-                            selectedCrops.includes(crop)
-                              ? 'border-primary bg-primary/10 text-primary'
-                              : 'border-border bg-background text-foreground',
-                          )}
-                        >
-                          <span
-                            className={cn(
-                              'inline-flex h-3 w-3 items-center justify-center rounded-[3px] border',
-                              selectedCrops.includes(crop)
-                                ? 'border-primary bg-primary'
-                                : 'border-muted bg-background',
-                            )}
-                          >
-                            {selectedCrops.includes(crop) && (
-                              <span className="block h-2 w-2 bg-background rounded-[2px]" />
-                            )}
-                          </span>
-                          <span className="capitalize">{crop.replace('-', ' ')}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Section: Basic info */}
+                  <div className="space-y-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Basic info</p>
                     <div className="space-y-1">
-                      <label className="text-sm font-medium text-foreground">Category</label>
-                      <div className="flex gap-2">
-                        <Select value={category} onValueChange={setCategory}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {availableCategories.map((cat) => (
-                              <SelectItem key={cat} value={cat.toLowerCase()}>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-lg">{getCategoryIcon(cat)}</span>
-                                  <span>{cat.charAt(0).toUpperCase() + cat.slice(1)}</span>
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <button
-                          type="button"
-                          onClick={() => setShowNewCategoryInput(!showNewCategoryInput)}
-                          className="fv-btn fv-btn--secondary shrink-0"
-                        >
-                          <Plus className="h-4 w-4" />
-                        </button>
-                      </div>
-                      {showNewCategoryInput && (
-                        <div className="flex gap-2 mt-2">
-                          <input
-                            className="fv-input"
-                            value={newCategoryName}
-                            onChange={(e) => setNewCategoryName(e.target.value)}
-                            placeholder="New category name"
-                          />
+                      <label className="text-sm font-medium text-foreground">Item name</label>
+                      <input
+                        className="fv-input h-10 w-full rounded-lg border-border/80"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        placeholder="e.g. NPK 23:23:0"
+                        required
+                      />
+                    </div>
+                    {/* Category | Packaging (Chemical only) or Quantity (all other categories) — same row */}
+                    <div className="grid grid-cols-[1fr_auto] gap-3 items-end">
+                      <div className="space-y-1 min-w-0">
+                        <label className="text-sm font-medium text-foreground">Category</label>
+                        <div className="flex gap-2">
+                          <Select
+                            value={category}
+                            onValueChange={(v) => {
+                              setCategory(v);
+                              if (v.toLowerCase() === 'fertilizer') setUnit('bags');
+                              if (v.toLowerCase() === 'seeds') { setUnit('packets'); setSeedCrop(''); }
+                              if (v.toLowerCase() !== 'seeds' && v.toLowerCase() !== 'fertilizer') setUnit('kg');
+                            }}
+                          >
+                            <SelectTrigger className="h-10">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {availableCategories.map((cat) => (
+                                <SelectItem key={cat} value={cat.toLowerCase()}>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-lg">{getCategoryIcon(cat)}</span>
+                                    <span>{getCategoryDisplayName(cat.toLowerCase())}</span>
+                                  </div>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                           <button
                             type="button"
-                            onClick={() => {
-                              if (newCategoryName.trim()) {
-                                handleAddCategory(newCategoryName);
-                              }
-                            }}
-                            className="fv-btn fv-btn--primary"
+                            onClick={() => setShowNewCategoryInput(!showNewCategoryInput)}
+                            className="fv-btn fv-btn--secondary shrink-0"
                           >
-                            Add
+                            <Plus className="h-4 w-4" />
                           </button>
                         </div>
-                      )}
+                        {showNewCategoryInput && (
+                          <div className="flex gap-2 mt-2">
+                            <input
+                              className="fv-input"
+                              value={newCategoryName}
+                              onChange={(e) => setNewCategoryName(e.target.value)}
+                              placeholder="New category name"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (newCategoryName.trim()) {
+                                  handleAddCategory(newCategoryName);
+                                }
+                              }}
+                              className="fv-btn fv-btn--primary"
+                            >
+                              Add
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      {/* Chemical: Packaging in same row. Other categories: Quantity in same row. */}
+                      {category.toLowerCase() === 'chemical' ? (
+                        <div className="space-y-1 w-[140px] shrink-0">
+                          <label className="text-sm font-medium text-foreground">Packaging</label>
+                          <Select value={chemicalPackaging} onValueChange={(v) => setChemicalPackaging(v as ChemicalPackagingType)}>
+                            <SelectTrigger className="h-10 w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="box">Box</SelectItem>
+                              <SelectItem value="single">Single products</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ) : (category.toLowerCase() === 'fuel' || category.toLowerCase() === 'diesel') ? (
+                        <div className="space-y-1 w-[140px] shrink-0">
+                          <label className="text-sm font-medium text-foreground">Containers</label>
+                          <input
+                            type="number"
+                            className="fv-input h-10 w-full"
+                            value={containers}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setContainers(v);
+                              const c = Number(v || '0');
+                              setTotalAmount((c * Number(pricePerUnit || '0')).toFixed(2));
+                            }}
+                            min="0"
+                            placeholder="e.g. 2"
+                            required
+                          />
+                        </div>
+                      ) : (category.toLowerCase() !== 'fuel' && category.toLowerCase() !== 'diesel') ? (
+                        <div className="space-y-1 w-[120px] shrink-0">
+                          <label className="text-sm font-medium text-foreground">
+                            {category.toLowerCase() === 'wooden-crates' ? 'Boxes' : 'Quantity'}
+                          </label>
+                          <input
+                            type="number"
+                            className="fv-input h-10 w-full"
+                            value={quantity}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setQuantity(v);
+                              const q = Number(v || '0');
+                              setTotalAmount((q * Number(pricePerUnit || '0')).toFixed(2));
+                            }}
+                            min="0"
+                            step="0.01"
+                            placeholder={category.toLowerCase() === 'wooden-crates' ? 'e.g. 5' : 'e.g. 10'}
+                            required
+                          />
+                        </div>
+                      ) : null}
                     </div>
-                    <div className="space-y-1">
-                      <label className="text-sm font-medium text-foreground">Quantity</label>
-                      <input
-                        type="number"
-                        className="fv-input"
-                        value={quantity}
-                        onChange={(e) => setQuantity(e.target.value)}
-                        min="0"
-                        step="0.01"
-                        required
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-sm font-medium text-foreground">Unit</label>
-                      <input
-                        className="fv-input"
-                        value={unit}
-                        onChange={(e) => setUnit(e.target.value)}
-                        placeholder="kg, L, etc."
-                        required
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-sm font-medium text-foreground">Price per unit (KES)</label>
-                      <input
-                        type="number"
-                        className="fv-input"
-                        value={pricePerUnit}
-                        onChange={(e) => setPricePerUnit(e.target.value)}
-                        min="0"
-                        step="0.01"
-                      />
+                    {/* Chemical: Single = Number of units only. Box = Number of boxes + Units per box + Total. (No separate Unit field.) */}
+                    {category.toLowerCase() === 'chemical' && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+                        {chemicalPackaging === 'single' ? (
+                          <div className="space-y-1">
+                            <label className="text-sm font-medium text-foreground">Number of units</label>
+                            <input
+                              type="number"
+                              className="fv-input h-10 w-full"
+                              value={quantity}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setQuantity(v);
+                                const q = Number(v || '0');
+                                setTotalAmount((q * Number(pricePerUnit || '0')).toFixed(2));
+                              }}
+                              min="0"
+                              required
+                            />
+                          </div>
+                        ) : (
+                          <>
+                            <div className="space-y-1">
+                              <label className="text-sm font-medium text-foreground">Number of boxes</label>
+                              <input
+                                type="number"
+                                className="fv-input h-10 w-full"
+                                value={quantity}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setQuantity(v);
+                                  const q = Number(v || '0');
+                                  setTotalAmount((q * Number(pricePerUnit || '0')).toFixed(2));
+                                }}
+                                min="0"
+                                required
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-sm font-medium text-foreground">Units per box (bottles/packets)</label>
+                              <input
+                                type="number"
+                                className="fv-input h-10 w-full"
+                                value={unitsPerBox}
+                                onChange={(e) => setUnitsPerBox(e.target.value)}
+                                min="1"
+                                placeholder="e.g. 12"
+                                required
+                              />
+                            </div>
+                            <div className="sm:col-span-2">
+                              <p className="text-sm text-muted-foreground">
+                                Total: <span className="font-medium text-foreground">{Number(quantity || 0) * Number(unitsPerBox || 0) || 0}</span> units
+                              </p>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+                    {(category.toLowerCase() === 'fuel' || category.toLowerCase() === 'diesel') && (
+                      <>
+                        <div className="space-y-1">
+                          <label className="text-sm font-medium text-foreground">Fuel type</label>
+                          <Select value={fuelType} onValueChange={(v) => setFuelType(v as FuelType)}>
+                            <SelectTrigger className="h-10">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="diesel">Diesel</SelectItem>
+                              <SelectItem value="petrol">Petrol</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-sm font-medium text-foreground">Litres (optional)</label>
+                          <input
+                            type="number"
+                            className="fv-input"
+                            value={litres}
+                            onChange={(e) => setLitres(e.target.value)}
+                            min="0"
+                            step="0.01"
+                            placeholder="e.g. 20"
+                          />
+                        </div>
+                      </>
+                    )}
+                    {category.toLowerCase() === 'wooden-crates' && (
+                      <>
+                        <div className="space-y-1">
+                          <label className="text-sm font-medium text-foreground">Box size</label>
+                          <Select value={boxSize} onValueChange={(v) => setBoxSize(v as 'big' | 'small')}>
+                            <SelectTrigger className="h-10">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="big">Big box</SelectItem>
+                              <SelectItem value="small">Small box</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </>
+                    )}
+                    {category.toLowerCase() === 'seeds' && (
+                      <>
+                        <div className="space-y-1">
+                          <label className="text-sm font-medium text-foreground">Crop (for this seed)</label>
+                          <Select value={seedCrop || '_none'} onValueChange={(v) => setSeedCrop(v === '_none' ? '' : (v as CropType))}>
+                            <SelectTrigger className="h-10 w-full">
+                              <SelectValue placeholder="Select crop" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="_none">Select crop</SelectItem>
+                              {cropOptions.map((crop) => (
+                                <SelectItem key={crop} value={crop}>
+                                  {crop.replace('-', ' ')}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-muted-foreground">Which crop this seed is for</p>
+                        </div>
+                      </>
+                    )}
+                    {/* Row: Unit | Kgs (optional, per item). Shown for fertilizer (bags) and chemical. Hidden for fuel. */}
+                    {(category.toLowerCase() !== 'fuel' && category.toLowerCase() !== 'diesel') && (
+                      <div className={cn(
+                        'grid gap-3 items-end',
+                        (category.toLowerCase() === 'fertilizer' && (unit || 'bags') === 'bags') || category.toLowerCase() === 'chemical'
+                          ? 'grid-cols-1 sm:grid-cols-2'
+                          : 'grid-cols-1'
+                      )}>
+                        <div className="space-y-1 min-w-0">
+                          <label className="text-sm font-medium text-foreground">Unit</label>
+                          {category.toLowerCase() === 'seeds' ? (
+                            <Select value={unit} onValueChange={(v) => setUnit(v)}>
+                              <SelectTrigger className="fv-input h-10 w-full min-w-0">
+                                <SelectValue placeholder="Unit" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="packets">Packets</SelectItem>
+                                <SelectItem value="kg">Kg</SelectItem>
+                                <SelectItem value="bags">Bags</SelectItem>
+                                <SelectItem value="tins">Tins</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          ) : category.toLowerCase() === 'fertilizer' ? (
+                            <Select value={unit || 'bags'} onValueChange={(v) => setUnit(v)}>
+                              <SelectTrigger className="fv-input h-10 w-full min-w-0">
+                                <SelectValue placeholder="Unit" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="bags">Bags</SelectItem>
+                                <SelectItem value="kg">Kg</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <Select value={unit || 'kg'} onValueChange={(v) => setUnit(v)}>
+                              <SelectTrigger className="fv-input h-10 w-full min-w-0">
+                                <SelectValue placeholder="Unit" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="kg">Kg</SelectItem>
+                                <SelectItem value="litres">Litres</SelectItem>
+                                <SelectItem value="bags">Bags</SelectItem>
+                                <SelectItem value="packets">Packets</SelectItem>
+                                <SelectItem value="tins">Tins</SelectItem>
+                                <SelectItem value="boxes">Boxes</SelectItem>
+                                <SelectItem value="units">Units</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </div>
+                        {category.toLowerCase() === 'fertilizer' && (unit || 'bags') === 'bags' && (
+                          <div className="space-y-1 min-w-0">
+                            <label className="text-sm font-medium text-foreground">Kgs (optional, per item e.g. per bag)</label>
+                            <input
+                              type="number"
+                              className="fv-input h-10 w-full"
+                              value={kgs}
+                              onChange={(e) => setKgs(e.target.value)}
+                              min="0"
+                              step="0.01"
+                              placeholder="e.g. 50 kg per bag"
+                            />
+                          </div>
+                        )}
+                        {category.toLowerCase() === 'chemical' && (() => {
+                          const u = (unit || 'kg').toLowerCase();
+                          const unitLabels: Record<string, { label: string; placeholder: string }> = {
+                            kg: { label: 'Kg (optional, per item e.g. per bottle)', placeholder: 'e.g. 500 g per bottle' },
+                            litres: { label: 'Litres (optional, per item e.g. per bottle)', placeholder: 'e.g. 1 L per bottle' },
+                            bags: { label: 'Kg (optional, per bag)', placeholder: 'e.g. 25 kg per bag' },
+                            packets: { label: 'Weight/vol (optional, per packet)', placeholder: 'e.g. 100 g' },
+                            tins: { label: 'Weight/vol (optional, per tin)', placeholder: 'e.g. 5 L' },
+                            boxes: { label: 'Weight/vol (optional, per box)', placeholder: 'e.g. 10 kg' },
+                            units: { label: 'Weight/vol (optional, per unit)', placeholder: 'e.g. 500 g' },
+                          };
+                          const { label: kgLabel, placeholder: kgPlaceholder } = unitLabels[u] || unitLabels.kg;
+                          return (
+                            <div className="space-y-1 min-w-0">
+                              <label className="text-sm font-medium text-foreground">{kgLabel}</label>
+                              <input
+                                type="number"
+                                className="fv-input h-10 w-full"
+                                value={kgs}
+                                onChange={(e) => setKgs(e.target.value)}
+                                min="0"
+                                step="0.01"
+                                placeholder={kgPlaceholder}
+                              />
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+                    {/* Row 2: Price per unit | Total amount — auto-calculate in real time */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+                      <div className="space-y-1 min-w-0">
+                        <label className="text-sm font-medium text-foreground">Price per unit (KES)</label>
+                        <input
+                          type="number"
+                          className="fv-input h-10 w-full"
+                          value={pricePerUnit}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setPricePerUnit(v);
+                            const num = Number(v || '0');
+                            if (effectiveQuantityForAdd > 0) setTotalAmount((num * effectiveQuantityForAdd).toFixed(2));
+                          }}
+                          min="0"
+                          step="0.01"
+                          placeholder="0"
+                        />
+                      </div>
+                      <div className="space-y-1 min-w-0">
+                        <label className="text-sm font-medium text-foreground">Total amount (KES)</label>
+                        <input
+                          type="number"
+                          className="fv-input h-10 w-full"
+                          value={totalAmount}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setTotalAmount(v);
+                            const num = Number(v || '0');
+                            if (effectiveQuantityForAdd > 0) setPricePerUnit((num / effectiveQuantityForAdd).toFixed(2));
+                          }}
+                          min="0"
+                          step="0.01"
+                          placeholder="0"
+                        />
+                      </div>
                     </div>
                     <div className="space-y-1">
                       <label className="text-sm font-medium text-foreground">Supplier (optional)</label>
-                      <Select value={selectedSupplierId} onValueChange={setSelectedSupplierId}>
-                        <SelectTrigger>
+                      <Select value={selectedSupplierId} onValueChange={(v) => { setSelectedSupplierId(v); if (!v) setPickupDate(''); }}>
+                        <SelectTrigger className="h-10">
                           <SelectValue placeholder="Select supplier" />
                         </SelectTrigger>
                         <SelectContent>
                           {suppliers
-                            .filter((s) => s.companyId === activeProject.companyId)
+                            .filter((s) => s.companyId === (activeProject?.companyId ?? user?.companyId))
                             .map((supplier) => (
                               <SelectItem key={supplier.id} value={supplier.id}>
                                 {supplier.name}
@@ -556,11 +1182,23 @@ export default function InventoryPage() {
                         </SelectContent>
                       </Select>
                     </div>
+                    {selectedSupplierId && (
+                      <div className="space-y-1">
+                        <label className="text-sm font-medium text-foreground">Pickup date (optional)</label>
+                        <input
+                          type="date"
+                          className="fv-input w-full"
+                          value={pickupDate}
+                          onChange={(e) => setPickupDate(e.target.value)}
+                        />
+                        <p className="text-xs text-muted-foreground">When you picked up this item from the supplier (e.g. for seeds)</p>
+                      </div>
+                    )}
                     <div className="space-y-1">
                       <label className="text-sm font-medium text-foreground">Min threshold</label>
                       <input
                         type="number"
-                        className="fv-input"
+                        className="fv-input h-10 rounded-lg border-border/80"
                         value="10"
                         readOnly
                         disabled
@@ -568,18 +1206,59 @@ export default function InventoryPage() {
                       <p className="text-xs text-muted-foreground">Default: 10 units</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
+
+                  {/* Section: Crop scope (optional) — at bottom for flow */}
+                  <div className="space-y-4 rounded-xl border border-border/60 bg-muted/30 p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Crop scope (optional)</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">Select crops this item is used for. Leave all unchecked for all crops.</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedCrops([...cropOptions])}
+                          className="text-xs font-medium text-primary hover:underline"
+                        >
+                          Select all
+                        </button>
+                        <span className="text-muted-foreground">·</span>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedCrops([])}
+                          className="text-xs font-medium text-muted-foreground hover:text-foreground hover:underline"
+                        >
+                          Clear all
+                        </button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {cropOptions.map((crop) => (
+                        <label
+                          key={crop}
+                          className="flex items-center gap-3 rounded-lg border border-border/60 bg-background px-3 py-2.5 cursor-pointer hover:bg-muted/50 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-offset-2"
+                        >
+                          <Checkbox
+                            checked={selectedCrops.includes(crop)}
+                            onCheckedChange={() => toggleCropSelection(crop)}
+                          />
+                          <span className="text-sm capitalize select-none">{crop.replace(/-/g, ' ')}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-muted/30 p-3">
+                    <Checkbox
                       id="countAsExpense"
                       checked={countAsExpense}
-                      onChange={(e) => setCountAsExpense(e.target.checked)}
-                      className="rounded border-gray-300"
+                      onCheckedChange={(v) => setCountAsExpense(!!v)}
                     />
-                    <label htmlFor="countAsExpense" className="text-sm text-foreground">
+                    <label htmlFor="countAsExpense" className="text-sm font-medium text-foreground cursor-pointer select-none">
                       Count initial stock as expense
                     </label>
                   </div>
+
                   <DialogFooter>
                     <button
                       type="button"
@@ -591,11 +1270,22 @@ export default function InventoryPage() {
                         setQuantity('');
                         setUnit('kg');
                         setPricePerUnit('');
+                        setTotalAmount('');
                         setSelectedCrops([]);
+                        setSeedCrop('');
                         setSelectedSupplierId('');
+                        setPickupDate('');
                         setCountAsExpense(false);
                         setShowNewCategoryInput(false);
                         setNewCategoryName('');
+                        setChemicalPackaging('box');
+                        setUnitsPerBox('');
+                        setFuelType('diesel');
+                        setContainers('');
+                        setLitres('');
+                        setBags('');
+                        setKgs('');
+                        setBoxSize('big');
                       }}
                     >
                       Cancel
@@ -632,10 +1322,124 @@ export default function InventoryPage() {
               <DialogHeader>
                 <DialogTitle>Items Needed for Purchase</DialogTitle>
               </DialogHeader>
+              <form
+                className="fv-card p-4 mb-6 space-y-3"
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  const companyId = user?.companyId ?? activeProject?.companyId;
+                  if (!companyId || !neededItemName.trim() || !neededItemCategory || !Number(neededItemQuantity)) {
+                    toast.error('Please fill in item name, category, and quantity.');
+                    return;
+                  }
+                  setNeededItemSaving(true);
+                  try {
+                    const neededRef = await addDoc(collection(db, 'neededItems'), {
+                      companyId,
+                      projectId: activeProject?.id ?? null,
+                      itemName: neededItemName.trim(),
+                      category: neededItemCategory.toLowerCase(),
+                      quantity: Number(neededItemQuantity),
+                      unit: neededItemUnit || 'kg',
+                      status: 'pending',
+                      createdAt: serverTimestamp(),
+                    });
+                    if (user?.companyId && user?.id) {
+                      await createInventoryAuditLog({
+                        companyId: user.companyId,
+                        actorUid: user.id,
+                        actorEmail: user.email ?? '',
+                        actorName: user.name,
+                        actionType: 'ADD_NEEDED',
+                        targetId: neededRef.id,
+                        targetType: 'NEEDED_ITEM',
+                        metadata: {
+                          itemName: neededItemName.trim(),
+                          category: neededItemCategory,
+                          quantity: Number(neededItemQuantity),
+                          unit: neededItemUnit || 'kg',
+                        },
+                      });
+                    }
+                    queryClient.invalidateQueries({ queryKey: ['neededItems'] });
+                    queryClient.invalidateQueries({ queryKey: ['inventory-audit-logs'] });
+                    setNeededItemName('');
+                    setNeededItemCategory(availableCategories[0]?.toLowerCase() ?? '');
+                    setNeededItemQuantity('');
+                    setNeededItemUnit('kg');
+                    toast.success('Item added to needed list.');
+                  } catch (err) {
+                    toast.error('Failed to add item.');
+                  } finally {
+                    setNeededItemSaving(false);
+                  }
+                }}
+              >
+                <h4 className="text-sm font-semibold text-foreground">Add item you're planning to get</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-foreground">Item name</label>
+                    <input
+                      className="fv-input w-full"
+                      value={neededItemName}
+                      onChange={(e) => setNeededItemName(e.target.value)}
+                      placeholder="e.g. Tomato seeds"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-foreground">Category</label>
+                    <Select value={neededItemCategory || availableCategories[0]?.toLowerCase()} onValueChange={setNeededItemCategory}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableCategories.map((cat) => (
+                          <SelectItem key={cat} value={cat.toLowerCase()}>
+                            {getCategoryDisplayName(cat.toLowerCase())}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-foreground">Quantity</label>
+                    <input
+                      type="number"
+                      className="fv-input w-full"
+                      value={neededItemQuantity}
+                      onChange={(e) => setNeededItemQuantity(e.target.value)}
+                      min="0"
+                      step="0.01"
+                      placeholder="0"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-foreground">Unit</label>
+                    <Select value={neededItemUnit} onValueChange={setNeededItemUnit}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="kg">Kg</SelectItem>
+                        <SelectItem value="packets">Packets</SelectItem>
+                        <SelectItem value="bags">Bags</SelectItem>
+                        <SelectItem value="L">L</SelectItem>
+                        <SelectItem value="boxes">Boxes</SelectItem>
+                        <SelectItem value="units">Units</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <button type="submit" className="fv-btn fv-btn--primary" disabled={neededItemSaving}>
+                  {neededItemSaving ? 'Adding…' : 'Add to list'}
+                </button>
+              </form>
               {filteredNeededItems.length === 0 ? (
                 <div className="text-center py-8">
                   <ShoppingCart className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                   <p className="text-sm text-muted-foreground">No items need to be purchased at this time.</p>
+                  <p className="text-xs text-muted-foreground mt-2">Use the form above to add an item you're planning to get.</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -654,7 +1458,7 @@ export default function InventoryPage() {
                           </div>
                           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 text-xs sm:text-sm text-muted-foreground">
                             <div>
-                              <span className="font-medium">Quantity:</span> {item.quantity || 'N/A'} {item.unit}
+                              <span className="font-medium">Quantity:</span> {formatInventoryQuantity(item)}
                             </div>
                             {item.sourceChallengeTitle && (
                               <div className="col-span-1 sm:col-span-2">
@@ -687,6 +1491,81 @@ export default function InventoryPage() {
               )}
             </DialogContent>
           </Dialog>
+
+          {/* Inventory Audit dialog */}
+          <Dialog open={inventoryAuditOpen} onOpenChange={setInventoryAuditOpen}>
+            <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <ScrollText className="h-5 w-5" />
+                  Inventory Audit
+                </DialogTitle>
+                <DialogDescription>
+                  Who did what and when: restock, deduct, and delete actions for your company.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="overflow-auto flex-1 -mx-6 px-6">
+                {inventoryAuditLoading && (
+                  <p className="text-sm text-muted-foreground py-4">Loading inventory audit logs…</p>
+                )}
+                {!inventoryAuditLoading && companyInventoryAuditLogs.length === 0 && (
+                  <div className="py-8">
+                    <p className="text-sm text-muted-foreground">
+                      No inventory actions yet. Restock, deduct, and delete actions will appear here with who did it and when.
+                    </p>
+                  </div>
+                )}
+                {!inventoryAuditLoading && companyInventoryAuditLogs.length > 0 && (
+                  <div className="overflow-x-auto">
+                    <table className="fv-table">
+                      <thead>
+                        <tr>
+                          <th>Date &amp; time</th>
+                          <th>Who</th>
+                          <th>Action</th>
+                          <th>Item</th>
+                          <th>Details</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {companyInventoryAuditLogs.map((log) => {
+                          const { actionLabel, details } = formatAuditLogDisplay(log);
+                          const itemName = (log.metadata as { itemName?: string })?.itemName ?? log.targetId;
+                          return (
+                            <tr key={log.id}>
+                              <td className="whitespace-nowrap text-muted-foreground">
+                                {log.createdAt.toLocaleString()}
+                              </td>
+                              <td>
+                                <span className="font-medium">{log.actorName || log.actorEmail}</span>
+                                <span className="text-xs text-muted-foreground block">{log.actorEmail}</span>
+                              </td>
+                              <td>
+                                <span className={cn(
+                                  'fv-badge text-xs',
+                                  log.actionType === 'DELETE' && 'bg-destructive/10 text-destructive',
+                                  log.actionType === 'DEDUCT' && 'bg-amber-100 text-amber-800',
+                                  log.actionType === 'RESTOCK' && 'bg-green-100 text-green-800',
+                                  log.actionType === 'ADD_ITEM' && 'bg-blue-100 text-blue-800',
+                                  log.actionType === 'ADD_NEEDED' && 'bg-violet-100 text-violet-800',
+                                )}>
+                                  {actionLabel}
+                                </span>
+                              </td>
+                              <td className="font-medium">{itemName}</td>
+                              <td className="text-sm text-muted-foreground max-w-[280px]">
+                                {details}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
@@ -696,9 +1575,9 @@ export default function InventoryPage() {
           <DialogHeader>
             <DialogTitle>Restock Inventory</DialogTitle>
           </DialogHeader>
-          {!activeProject || !restockItem ? (
+          {!restockItem ? (
             <p className="text-sm text-muted-foreground">
-              Select a project and item to restock.
+              Select an item to restock.
             </p>
           ) : (
             <form onSubmit={handleRestock} className="space-y-4">
@@ -732,6 +1611,7 @@ export default function InventoryPage() {
                     onChange={(e) => setRestockTotalCost(e.target.value)}
                     required
                   />
+                  <p className="text-xs text-muted-foreground">This total amount is recorded as the restock cost and (if project selected) as expense.</p>
                 </div>
               </div>
               <DialogFooter>
@@ -755,13 +1635,94 @@ export default function InventoryPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Deduct dialog */}
+      <Dialog open={deductOpen} onOpenChange={setDeductOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Deduct from stock</DialogTitle>
+            <DialogDescription>
+              {deductItem && (
+                <>Reduce quantity for <span className="font-medium text-foreground">{deductItem.name}</span>. Current: {formatInventoryQuantity(deductItem)}</>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          {deductItem && (
+            <form onSubmit={handleDeduct} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-foreground">Quantity to deduct</label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  className="fv-input w-full"
+                  value={deductQuantity}
+                  onChange={(e) => setDeductQuantity(e.target.value)}
+                  placeholder="e.g. 2, 0.5, 1/2"
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-foreground">Reason (optional)</label>
+                <input
+                  type="text"
+                  className="fv-input w-full"
+                  value={deductReason}
+                  onChange={(e) => setDeductReason(e.target.value)}
+                  placeholder="e.g. Damaged, expired"
+                />
+              </div>
+              <DialogFooter>
+                <button type="button" className="fv-btn fv-btn--secondary" onClick={() => setDeductOpen(false)}>Cancel</button>
+                <button type="submit" disabled={deductSaving} className="fv-btn fv-btn--primary">
+                  {deductSaving ? 'Deducting…' : 'Deduct'}
+                </button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirmation */}
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete inventory item?</DialogTitle>
+            <DialogDescription>
+              {deleteItem && (
+                <>This will permanently delete <span className="font-medium text-foreground">{deleteItem.name}</span>. This action cannot be undone.</>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          {deleteItem && (
+            <DialogFooter>
+              <button type="button" className="fv-btn fv-btn--secondary" onClick={() => setDeleteConfirmOpen(false)}>Cancel</button>
+              <button type="button" className="fv-btn bg-destructive text-destructive-foreground hover:bg-destructive/90" disabled={deleteSaving} onClick={handleDelete}>
+                {deleteSaving ? 'Deleting…' : 'Delete'}
+              </button>
+            </DialogFooter>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Summary Stats */}
       <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 mb-6">
-        <SimpleStatCard
-          title="Total Items"
-          value={inventory.length}
-          layout="vertical"
-        />
+        <div
+          className="relative overflow-hidden rounded-xl border border-border/50 bg-card/60 backdrop-blur-sm transition-all p-3 sm:p-4 after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-gradient-to-r after:from-primary/60 after:via-primary/20 after:to-transparent"
+        >
+          <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Total Items
+          </p>
+          <p className="mt-1 font-heading font-bold tracking-tight text-lg sm:text-xl text-foreground">
+            {inventory.length}
+          </p>
+          <button
+            type="button"
+            onClick={() => setInventoryAuditOpen(true)}
+            className="mt-2 text-xs text-primary hover:underline flex items-center gap-1"
+          >
+            <ScrollText className="h-3 w-3 shrink-0" />
+            Inventory Audit
+          </button>
+        </div>
         <SimpleStatCard
           title="Total Value"
           value={formatCurrency(inventory.reduce((sum, i) => sum + (i.quantity * (i.pricePerUnit || 0)), 0))}
@@ -890,18 +1851,40 @@ export default function InventoryPage() {
                     </span>
                   </td>
                   <td className={cn('font-medium', isLowStock(item) && 'text-fv-warning')}>
-                    {item.quantity} {item.unit}
+                    {formatInventoryQuantity(item)}
                   </td>
                   <td>{formatCurrency(item.pricePerUnit || 0)}</td>
                   <td className="font-medium">{formatCurrency(item.quantity * (item.pricePerUnit || 0))}</td>
                   <td className="text-muted-foreground">{item.supplierName || '-'}</td>
                   <td>
-                    <button
-                      className="p-2 hover:bg-muted rounded-lg transition-colors"
-                      onClick={() => handleOpenRestock(item)}
-                    >
-                      <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
-                    </button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          className="p-2 hover:bg-muted rounded-lg transition-colors"
+                          aria-label="Actions"
+                        >
+                          <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-48">
+                        <DropdownMenuItem onClick={() => handleOpenRestock(item)}>
+                          <Plus className="h-4 w-4 mr-2" />
+                          Restock
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleOpenDeduct(item)}>
+                          <Minus className="h-4 w-4 mr-2" />
+                          Deduct
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => handleConfirmDelete(item)}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </td>
                 </tr>
               ))}
@@ -923,17 +1906,31 @@ export default function InventoryPage() {
                     <p className="text-xs text-muted-foreground capitalize">{item.category}</p>
                   </div>
                 </div>
-                {isLowStock(item) && (
-                  <span className="fv-badge fv-badge--warning text-xs">
-                    <AlertTriangle className="h-3 w-3 mr-1" />
-                    Low
-                  </span>
-                )}
+                <div className="flex items-center gap-1">
+                  {isLowStock(item) && (
+                    <span className="fv-badge fv-badge--warning text-xs">
+                      <AlertTriangle className="h-3 w-3 mr-1" />
+                      Low
+                    </span>
+                  )}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button type="button" className="p-2 hover:bg-muted rounded-lg">
+                        <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48">
+                      <DropdownMenuItem onClick={() => handleOpenRestock(item)}><Plus className="h-4 w-4 mr-2" /> Restock</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleOpenDeduct(item)}><Minus className="h-4 w-4 mr-2" /> Deduct</DropdownMenuItem>
+                      <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => handleConfirmDelete(item)}><Trash2 className="h-4 w-4 mr-2" /> Delete</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <div>
                   <span className="text-muted-foreground">Quantity:</span>
-                  <span className="ml-1 font-medium">{item.quantity} {item.unit}</span>
+                  <span className="ml-1 font-medium">{formatInventoryQuantity(item)}</span>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Value:</span>
@@ -945,9 +1942,9 @@ export default function InventoryPage() {
         </div>
       </div>
 
-      {/* Category Items Drawer */}
+      {/* Category Items Drawer - drag the top handle to move or close */}
       <Drawer open={categoryDrawerOpen} onOpenChange={setCategoryDrawerOpen}>
-        <DrawerContent className="max-h-[85vh]">
+        <DrawerContent className="max-h-[85vh]" resizable defaultHeightVh={50}>
           <DrawerHeader className="text-left">
             <div className="flex items-center gap-3">
               <div className="text-3xl">
@@ -986,7 +1983,7 @@ export default function InventoryPage() {
                         </div>
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs sm:text-sm text-muted-foreground">
                           <div>
-                            <span className="font-medium">Quantity:</span> {item.quantity} {item.unit}
+                            <span className="font-medium">Quantity:</span> {formatInventoryQuantity(item)}
                           </div>
                           {item.pricePerUnit && (
                             <div>
@@ -1003,13 +2000,18 @@ export default function InventoryPage() {
                           </div>
                         )}
                       </div>
-                      <button
-                        onClick={() => handleOpenRestock(item)}
-                        className="fv-btn fv-btn--secondary shrink-0 p-2"
-                        title="Restock"
-                      >
-                        <Plus className="h-4 w-4" />
-                      </button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button type="button" className="fv-btn fv-btn--secondary shrink-0 p-2" title="Actions">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-48">
+                          <DropdownMenuItem onClick={() => { setCategoryDrawerOpen(false); handleOpenRestock(item); }}><Plus className="h-4 w-4 mr-2" /> Restock</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => { setCategoryDrawerOpen(false); handleOpenDeduct(item); }}><Minus className="h-4 w-4 mr-2" /> Deduct</DropdownMenuItem>
+                          <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => { setCategoryDrawerOpen(false); handleConfirmDelete(item); }}><Trash2 className="h-4 w-4 mr-2" /> Delete</DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </div>
                 ))}

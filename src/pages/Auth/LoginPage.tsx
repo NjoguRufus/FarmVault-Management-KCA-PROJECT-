@@ -69,8 +69,19 @@ export default function LoginPage() {
     try {
       await login(email, password);
       // Navigation will happen via useEffect when isAuthenticated becomes true
-    } catch (err: any) {
-      setError(err?.message || 'Failed to sign in');
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code;
+      if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/invalid-login-credentials') {
+        setError('Incorrect password. Try again.');
+      } else if (code === 'auth/user-not-found') {
+        setError('No account found with this email. Try again or contact your admin.');
+      } else if (code === 'auth/invalid-email') {
+        setError('Invalid email address. Please check and try again.');
+      } else if (code?.startsWith('auth/')) {
+        setError('Unable to sign in. Check your email and password, then try again.');
+      } else {
+        setError('Failed to sign in. Please try again.');
+      }
       setLoading(false);
     }
   };
