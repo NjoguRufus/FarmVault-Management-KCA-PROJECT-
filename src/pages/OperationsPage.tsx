@@ -16,7 +16,6 @@ import {
   rejectWorkCard,
   canAdminApproveOrReject,
 } from '@/services/operationsWorkCardService';
-import { syncTodaysLabourExpenses } from '@/services/workLogService';
 import { recordInventoryUsage } from '@/services/inventoryService';
 import { SimpleStatCard } from '@/components/dashboard/SimpleStatCard';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
@@ -80,6 +79,18 @@ export default function OperationsPage() {
   const getPaidIcon = (paid?: boolean) =>
     paid ? <CheckCircle className="h-5 w-5 text-fv-success" /> : <Clock className="h-5 w-5 text-fv-warning" />;
 
+  const getWorkTypeIcon = (workType?: string) => {
+    if (!workType) return '🧑‍🌾';
+    const map: Record<string, string> = {
+      'Spraying': '💦',
+      'Fertilizer application': '🌾',
+      'Watering': '💧',
+      'Weeding': '🌱',
+      'Tying of crops': '🪢',
+    };
+    return map[workType] || '🧑‍🌾';
+  };
+
   const getAssigneeName = (id?: string) => {
     if (!id) return 'Unassigned';
     const employee = allEmployees.find(e => e.id === id);
@@ -136,7 +147,6 @@ export default function OperationsPage() {
   const [saving, setSaving] = useState(false);
   const [wateringContainers, setWateringContainers] = useState('');
   const [tyingUsedType, setTyingUsedType] = useState<'ropes' | 'sacks'>('ropes');
-  const [syncing, setSyncing] = useState(false);
   const [markingPaid, setMarkingPaid] = useState(false);
 
   // Work cards (operationsWorkCards): Admin creates; Admin views Planned vs Actual and approves/rejects
@@ -147,6 +157,35 @@ export default function OperationsPage() {
     if (!activeProject) return workCards;
     return workCards.filter((c) => c.projectId === activeProject.id);
   }, [workCards, activeProject]);
+
+  /** Cards still in progress: planned, submitted, or rejected (shown in Work Cards grid). */
+  const workCardsInProgress = useMemo(() => {
+    return workCardsForProject.filter(
+      (c) => c.status === 'planned' || c.status === 'submitted' || c.status === 'rejected'
+    );
+  }, [workCardsForProject]);
+
+  /** Approved or paid cards (shown in Work Logs section). */
+  const approvedOrPaidWorkCards = useMemo(() => {
+    return workCardsForProject.filter(
+      (c) => c.status === 'approved' || c.status === 'paid' || c.payment?.isPaid
+    );
+  }, [workCardsForProject]);
+
+  /** Combined list for Work Logs section: work logs + approved/paid work cards, sorted by date (newest first). */
+  const combinedWorkEntries = useMemo(() => {
+    const toTime = (d: unknown) => {
+      if (!d) return 0;
+      const date = (d as { toDate?: () => Date })?.toDate?.() ?? new Date(d as Date);
+      return date.getTime();
+    };
+    const logEntries = workLogs.map((log) => ({ type: 'workLog' as const, log, sortTime: toTime(log.date) }));
+    const cardEntries = approvedOrPaidWorkCards.map((card) => {
+      const t = toTime(card.actual?.actualDate ?? card.approvedAt ?? card.createdAt);
+      return { type: 'workCard' as const, card, sortTime: t };
+    });
+    return [...logEntries, ...cardEntries].sort((a, b) => b.sortTime - a.sortTime);
+  }, [workLogs, approvedOrPaidWorkCards]);
 
   const totalLabourFromWorkCards = useMemo(() => {
     return workCardsForProject.reduce((sum, card) => {
@@ -785,24 +824,6 @@ export default function OperationsPage() {
     }
   };
 
-  const handleSyncTodaysLabour = async () => {
-    if (!activeProject || !user) return;
-    setSyncing(true);
-    try {
-      await syncTodaysLabourExpenses({
-        companyId: activeProject.companyId,
-        projectId: activeProject.id,
-        date: new Date(),
-        paidByUserId: user.id,
-        paidByName: user.name,
-      });
-      queryClient.invalidateQueries({ queryKey: ['workLogs'] });
-      queryClient.invalidateQueries({ queryKey: ['expenses'] });
-    } finally {
-      setSyncing(false);
-    }
-  };
-
   const handleMarkAsPaid = async (log: WorkLog) => {
     if (!user || !log.id) return;
     setMarkingPaid(true);
@@ -946,13 +967,6 @@ export default function OperationsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <button
-            className="fv-btn fv-btn--secondary"
-            disabled={syncing}
-            onClick={handleSyncTodaysLabour}
-          >
-            {syncing ? 'Syncing…' : "Sync Today's Labour"}
-          </button>
           <Dialog open={addCardOpen} onOpenChange={setAddCardOpen}>
             <DialogTrigger asChild>
               <button className="fv-btn fv-btn--primary" type="button">
@@ -1145,25 +1159,23 @@ export default function OperationsPage() {
         />
       </div>
 
-      {/* Work Cards (Admin-created; Manager submits execution) */}
-      {workCardsForProject.length > 0 && (
+      {/* Work Cards (in progress only: planned, submitted, rejected) */}
+      {workCardsInProgress.length > 0 && (
         <div className="space-y-3">
           <h2 className="font-heading font-semibold text-foreground text-lg">Work cards</h2>
           <p className="text-sm text-muted-foreground">
-            Cards you created. Managers submit execution into these; you compare <span className="font-medium text-foreground">Planned vs Actual</span> and
-            {' '}<span className="font-medium text-foreground">Approve / Reject</span>.
+            Cards awaiting action. Compare <span className="font-medium text-foreground">Planned vs Actual</span> and
+            {' '}<span className="font-medium text-foreground">Approve / Reject</span>. Approved and paid cards appear in the Work logs section below.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            {workCardsForProject.map((card) => (
+            {workCardsInProgress.map((card) => (
               <div
                 key={card.id}
                 className={cn(
-                  'fv-card p-4 cursor-pointer hover:shadow-md hover:-translate-y-[1px] transition-all relative overflow-hidden border border-border/70',
-                  (card.status === 'paid' || card.payment?.isPaid) && 'bg-emerald-50/40',
-                  card.status === 'approved' && 'bg-emerald-50/40',
-                  card.status === 'submitted' && 'bg-amber-50/40',
+                  'fv-card p-4 cursor-pointer hover:shadow-md hover:-translate-y-[1px] transition-all relative overflow-hidden border border-border/70 bg-card',
+                  card.status === 'submitted' && 'bg-amber-50/60',
                   card.status === 'rejected' && 'bg-destructive/5',
-                  card.status === 'planned' && 'bg-muted/40',
+                  card.status === 'planned' && 'bg-card',
                 )}
                 onClick={() => {
                   setSelectedWorkCard(card);
@@ -1190,6 +1202,9 @@ export default function OperationsPage() {
                   <div className="flex items-start justify-between gap-2">
                     <div className="space-y-1 min-w-0">
                       <div className="flex items-center gap-2">
+                        <span className="text-xl">
+                          {getWorkTypeIcon(card.workTitle || card.workCategory)}
+                        </span>
                         <p className="font-medium text-foreground truncate">
                           {card.workTitle || card.workCategory}
                         </p>
@@ -1262,131 +1277,183 @@ export default function OperationsPage() {
         </div>
       </div>
 
-      {/* Work Logs */}
+      {/* Work Logs & completed work cards (approved/paid) */}
+      <div className="space-y-2">
+        <h2 className="font-heading font-semibold text-foreground text-lg">Work logs & completed cards</h2>
+        <p className="text-sm text-muted-foreground">
+          Work logs and approved or paid work cards. Click to view details or mark as paid.
+        </p>
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {isLoading && (
           <div className="col-span-full fv-card p-8 text-center">
-            <p className="text-sm text-muted-foreground">Loading work logs…</p>
+            <p className="text-sm text-muted-foreground">Loading…</p>
           </div>
         )}
-        {workLogs.map((log) => (
-          <div
-            key={log.id}
-            className={cn(
-              "fv-card relative flex items-start gap-4 p-4 cursor-pointer overflow-hidden hover:shadow-md transition-shadow",
-              log.paid && "after:content-['PAID'] after:absolute after:top-1/2 after:left-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:text-7xl after:font-bold after:text-red-500/15 after:rotate-[-35deg] after:pointer-events-none after:select-none after:z-0"
-            )}
-            onClick={() => handleViewLog(log)}
-          >
+        {combinedWorkEntries.map((entry) =>
+          entry.type === 'workLog' ? (
+            <div
+              key={`log-${entry.log.id}`}
+              className={cn(
+                "fv-card relative flex items-start gap-4 p-4 cursor-pointer overflow-hidden hover:shadow-md transition-shadow",
+                entry.log.paid && "after:content-['PAID'] after:absolute after:top-1/2 after:left-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:text-7xl after:font-bold after:text-red-500/15 after:rotate-[-35deg] after:pointer-events-none after:select-none after:z-0"
+              )}
+              onClick={() => handleViewLog(entry.log)}
+            >
               <div className="shrink-0 mt-1 relative z-10">
-                {getPaidIcon(log.paid)}
+                {getPaidIcon(entry.log.paid)}
               </div>
               <div className="flex-1 min-w-0 relative z-10">
                 <div className="flex items-start justify-between gap-4 mb-2">
                   <div>
                     <div className="flex items-center gap-2">
-                      <h3 className="font-semibold text-foreground">{log.workCategory}</h3>
-                      <span className={cn('fv-badge capitalize text-xs', getPaidBadge(log.paid))}>
-                        {log.paid ? 'Paid' : 'Unpaid'}
+                      <span className="text-lg">
+                        {getWorkTypeIcon(entry.log.workCategory)}
+                      </span>
+                      <h3 className="font-semibold text-foreground">{entry.log.workCategory}</h3>
+                      <span className={cn('fv-badge capitalize text-xs', getPaidBadge(entry.log.paid))}>
+                        {entry.log.paid ? 'Paid' : 'Unpaid'}
                       </span>
                     </div>
-                    {log.adminName && (
+                    {entry.log.adminName && (
                       <p className="text-[11px] text-muted-foreground mt-0.5">
-                        Planned by admin: {log.adminName}
+                        Planned by admin: {entry.log.adminName}
                       </p>
                     )}
-                    {log.managerSubmittedAt && (
+                    {entry.log.managerSubmittedAt && (
                       <p className="text-[11px] text-fv-info mt-0.5">
-                        Manager {log.managerName || getAssigneeName(log.managerId)} submitted values
-                        {log.managerSubmissionStatus &&
-                          ` • ${String(log.managerSubmissionStatus).toUpperCase()}`}
+                        Manager {entry.log.managerName || getAssigneeName(entry.log.managerId)} submitted values
+                        {entry.log.managerSubmissionStatus &&
+                          ` • ${String(entry.log.managerSubmissionStatus).toUpperCase()}`}
                       </p>
                     )}
                     <p className="text-sm text-muted-foreground mt-1">
-                      {log.numberOfPeople} people
-                      {log.ratePerPerson ? ` @ KES ${log.ratePerPerson.toLocaleString()}` : ''}
-                      {log.totalPrice && (
+                      {entry.log.numberOfPeople} people
+                      {entry.log.ratePerPerson ? ` @ KES ${entry.log.ratePerPerson.toLocaleString()}` : ''}
+                      {entry.log.totalPrice && (
                         <span className="ml-2 font-semibold text-foreground">
-                          • Total: KES {log.totalPrice.toLocaleString()}
+                          • Total: KES {entry.log.totalPrice.toLocaleString()}
                         </span>
                       )}
                     </p>
-                    {log.notes && (
+                    {entry.log.notes && (
                       <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                        {log.notes}
+                        {entry.log.notes}
                       </p>
                     )}
                   </div>
                 </div>
                 <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
-                  <span>
-                    {formatDate(log.date)}
-                  </span>
+                  <span>{formatDate(entry.log.date)}</span>
                   <span>•</span>
-                  <span>Stage: {log.stageName}</span>
-                  {(log.employeeId || (log as any).employeeIds) && (
+                  <span>Stage: {entry.log.stageName}</span>
+                  {(entry.log.employeeId || (entry.log as any).employeeIds) && (
                     <>
                       <span>•</span>
                       <span className="font-medium text-foreground">
                         Assigned: {(() => {
-                          if ((log as any).employeeIds && Array.isArray((log as any).employeeIds)) {
-                            const names = (log as any).employeeIds
+                          if ((entry.log as any).employeeIds && Array.isArray((entry.log as any).employeeIds)) {
+                            const names = (entry.log as any).employeeIds
                               .map((id: string) => allEmployees.find(e => e.id === id)?.name)
                               .filter(Boolean);
                             return names.length > 0 ? names.join(', ') : 'Multiple employees';
                           }
-                          return getAssignedEmployeeName(log);
+                          return getAssignedEmployeeName(entry.log);
                         })()}
                       </span>
                     </>
                   )}
                   <span>•</span>
-                  <span>Manager: {getAssigneeName(log.managerId)}</span>
+                  <span>Manager: {getAssigneeName(entry.log.managerId)}</span>
                 </div>
-                {log.managerSubmittedNumberOfPeople && (
+                {entry.log.managerSubmittedNumberOfPeople && (
                   <div className="mt-2 p-2 rounded-md bg-muted/40 border border-dashed border-muted-foreground/30 text-[11px] text-muted-foreground space-y-1">
                     <p className="font-semibold text-foreground text-xs">
-                      Manager submission ({log.managerSubmissionStatus?.toUpperCase() || 'PENDING'})
+                      Manager submission ({entry.log.managerSubmissionStatus?.toUpperCase() || 'PENDING'})
                     </p>
                     <p>
-                      People:{' '}
-                      <span className="font-medium text-foreground">
-                        {log.managerSubmittedNumberOfPeople}
-                      </span>
-                      {log.managerSubmittedRatePerPerson && (
-                        <>
-                          {' '}@ KES{' '}
-                          <span className="font-medium text-foreground">
-                            {log.managerSubmittedRatePerPerson.toLocaleString()}
-                          </span>
-                        </>
+                      People: <span className="font-medium text-foreground">{entry.log.managerSubmittedNumberOfPeople}</span>
+                      {entry.log.managerSubmittedRatePerPerson && (
+                        <> @ KES <span className="font-medium text-foreground">{entry.log.managerSubmittedRatePerPerson.toLocaleString()}</span></>
                       )}
                     </p>
-                    {log.managerSubmittedTotalPrice && (
-                      <p>
-                        Total:{' '}
-                        <span className="font-semibold text-foreground">
-                          KES {log.managerSubmittedTotalPrice.toLocaleString()}
-                        </span>
-                      </p>
+                    {entry.log.managerSubmittedTotalPrice && (
+                      <p>Total: <span className="font-semibold text-foreground">KES {entry.log.managerSubmittedTotalPrice.toLocaleString()}</span></p>
                     )}
-                    {log.managerSubmittedInputsUsed && (
-                      <p className="line-clamp-2">
-                        Inputs: <span className="font-medium text-foreground">{log.managerSubmittedInputsUsed}</span>
-                      </p>
+                    {entry.log.managerSubmittedInputsUsed && (
+                      <p className="line-clamp-2">Inputs: <span className="font-medium text-foreground">{entry.log.managerSubmittedInputsUsed}</span></p>
                     )}
                   </div>
                 )}
               </div>
             </div>
-          ))}
+          ) : (
+            <div
+              key={`card-${entry.card.id}`}
+              className={cn(
+                "fv-card relative flex items-start gap-4 p-4 cursor-pointer overflow-hidden hover:shadow-md transition-shadow",
+                (entry.card.payment?.isPaid || entry.card.status === 'paid') && "after:content-['PAID'] after:absolute after:top-1/2 after:left-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:text-7xl after:font-bold after:text-red-500/15 after:rotate-[-35deg] after:pointer-events-none after:select-none after:z-0"
+              )}
+              onClick={() => {
+                setSelectedWorkCard(entry.card);
+                setWorkCardModalOpen(true);
+                setWorkCardEditMode(false);
+                setRejectReason('');
+              }}
+            >
+              <div className="shrink-0 mt-1 relative z-10">
+                {(entry.card.payment?.isPaid || entry.card.status === 'paid')
+                  ? <CheckCircle className="h-5 w-5 text-fv-success" />
+                  : <Clock className="h-5 w-5 text-fv-warning" />}
+              </div>
+              <div className="flex-1 min-w-0 relative z-10">
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">
+                        {getWorkTypeIcon(entry.card.workTitle || entry.card.workCategory)}
+                      </span>
+                      <h3 className="font-semibold text-foreground">{entry.card.workTitle || entry.card.workCategory}</h3>
+                      <span className={cn(
+                        'fv-badge capitalize text-xs',
+                        (entry.card.payment?.isPaid || entry.card.status === 'paid') ? 'fv-badge--active' : 'bg-emerald-100 text-emerald-800'
+                      )}>
+                        {(entry.card.payment?.isPaid || entry.card.status === 'paid') ? 'Paid' : 'Approved'}
+                      </span>
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {entry.card.actual?.actualWorkers ?? 0} people
+                      {entry.card.actual?.ratePerPerson != null ? ` @ KES ${Number(entry.card.actual.ratePerPerson).toLocaleString()}` : ''}
+                      {(entry.card.actual?.actualWorkers != null && entry.card.actual?.ratePerPerson != null) && (
+                        <span className="ml-2 font-semibold text-foreground">
+                          • Total: KES {(entry.card.actual.actualWorkers * entry.card.actual.ratePerPerson).toLocaleString()}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
+                  <span>
+                    {formatDate(
+                      (entry.card.actual?.actualDate as any)?.toDate?.() ?? (entry.card.approvedAt as any)?.toDate?.() ?? (entry.card as any).createdAt?.toDate?.() ?? new Date()
+                    )}
+                  </span>
+                  <span>•</span>
+                  <span>Stage: {entry.card.stageName || entry.card.stageId || '—'}</span>
+                  <span>•</span>
+                  <span>Manager: {entry.card.allocatedManagerId ? getAssigneeName(entry.card.allocatedManagerId) : (entry.card.actual?.managerName ?? '—')}</span>
+                </div>
+              </div>
+            </div>
+          )
+        )}
 
-        {workLogs.length === 0 && !isLoading && (
+        {combinedWorkEntries.length === 0 && !isLoading && (
           <div className="col-span-full fv-card text-center py-12">
             <Wrench className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-foreground mb-2">No Work Logged</h3>
+            <h3 className="text-lg font-medium text-foreground mb-2">No work logs or completed cards</h3>
             <p className="text-sm text-muted-foreground">
-              Click "Plan Today&apos;s Work" to capture today&apos;s activities.
+              Plan work with &quot;Plan Today&apos;s Work&quot;, or approved/paid work cards will appear here.
             </p>
           </div>
         )}

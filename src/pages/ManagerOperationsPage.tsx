@@ -118,6 +118,16 @@ export default function ManagerOperationsPage() {
     fromCompany.forEach((c) => byId.set(c.id, c));
     return Array.from(byId.values());
   }, [managerWorkCards, companyWorkCards, managerIdsForCurrentUser, managerIdsArray.length]);
+
+  // Separate work cards into in‑progress vs completed (approved/paid)
+  const workCardsInProgress = useMemo(
+    () => workCards.filter((c) => c.status === 'planned' || c.status === 'submitted' || c.status === 'rejected'),
+    [workCards],
+  );
+  const workCardsCompleted = useMemo(
+    () => workCards.filter((c) => c.status === 'approved' || c.status === 'paid' || c.payment?.isPaid),
+    [workCards],
+  );
   const invalidateWorkCards = useInvalidateWorkCards();
 
   const isManagerOrAdmin = useMemo(() => {
@@ -267,6 +277,28 @@ export default function ManagerOperationsPage() {
     });
   }, [managerWorkLogs, search, statusFilter, stageFilter, dateRangeFilter]);
 
+  // Combined list for Work Logs cards view: filtered work logs + completed work cards, sorted by date (newest first).
+  const combinedManagerEntries = useMemo(() => {
+    const toTime = (d: unknown) => {
+      if (!d) return 0;
+      const date = (d as { toDate?: () => Date })?.toDate?.() ?? new Date(d as Date);
+      return date.getTime();
+    };
+
+    const logEntries = filteredWorkLogs.map((log) => ({
+      type: 'workLog' as const,
+      log,
+      sortTime: toTime(log.date),
+    }));
+
+    const cardEntries = workCardsCompleted.map((card) => {
+      const t = toTime(card.actual?.actualDate ?? card.approvedAt ?? card.createdAt);
+      return { type: 'workCard' as const, card, sortTime: t };
+    });
+
+    return [...logEntries, ...cardEntries].sort((a, b) => b.sortTime - a.sortTime);
+  }, [filteredWorkLogs, workCardsCompleted]);
+
   // Get unique stages for filter dropdown
   const uniqueStages = useMemo(() => {
     const stages = new Set<string>();
@@ -309,6 +341,18 @@ export default function ManagerOperationsPage() {
 
   const getPaidIcon = (paid?: boolean) =>
     paid ? <CheckCircle className="h-5 w-5 text-fv-success" /> : <Clock className="h-5 w-5 text-fv-warning" />;
+
+  const getWorkTypeIcon = (workType?: string) => {
+    if (!workType) return '🧑‍🌾';
+    const map: Record<string, string> = {
+      'Spraying': '💦',
+      'Fertilizer application': '🌾',
+      'Watering': '💧',
+      'Weeding': '🌱',
+      'Tying of crops': '🪢',
+    };
+    return map[workType] || '🧑‍🌾';
+  };
 
   const getAssigneeName = (employeeId?: string) => {
     if (!employeeId) return 'Unassigned';
@@ -1101,16 +1145,19 @@ export default function ManagerOperationsPage() {
             <h2 className="font-semibold text-foreground mb-1">My Work Cards</h2>
             <p className="text-sm text-muted-foreground">
               Work cards created by Admin and assigned to you. Use <strong>Record Work</strong> to submit execution data into the same card (no new cards).
+              Approved and paid cards will appear in your Work Logs &amp; Filters section.
             </p>
           </div>
-          {workCards.length === 0 ? (
+          {workCardsInProgress.length === 0 ? (
             <div className="fv-card p-6 text-center text-muted-foreground">
-              <p className="font-medium text-foreground">No work cards assigned to you yet</p>
-              <p className="text-sm mt-1">When an admin creates a work card and allocates it to you, it will appear here.</p>
+              <p className="font-medium text-foreground">No active work cards assigned to you</p>
+              <p className="text-sm mt-1">
+                When an admin creates a new work card and allocates it to you, it will appear here until it is approved or paid.
+              </p>
             </div>
           ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {workCards.map((card) => (
+            {workCardsInProgress.map((card) => (
               <div
                 key={card.id}
                 className={cn(
@@ -1132,7 +1179,14 @@ export default function ManagerOperationsPage() {
                   {(card.status === 'paid' || card.payment?.isPaid) ? 'PAID' : card.status.toUpperCase()}
                 </span>
                 <div className="space-y-2 relative z-10">
-                  <p className="font-medium text-foreground">{card.workTitle || card.workCategory}</p>
+                  <p className="font-medium text-foreground flex items-center gap-2">
+                    <span className="text-lg">
+                      {getWorkTypeIcon(card.workTitle || card.workCategory)}
+                    </span>
+                    <span className="truncate">
+                      {card.workTitle || card.workCategory}
+                    </span>
+                  </p>
                   <p className="text-xs text-muted-foreground">
                     {card.stageName || card.stageId} • Planned: {card.planned?.workers ?? 0} workers
                     {card.planned?.estimatedCost != null && ` • KES ${Number(card.planned.estimatedCost).toLocaleString()}`}
@@ -1393,7 +1447,7 @@ export default function ManagerOperationsPage() {
           <div>
             <h3 className="font-semibold text-foreground">Work Logs</h3>
             <p className="text-sm text-muted-foreground">
-              {filteredWorkLogs.length} logs found
+              {combinedManagerEntries.length} entries found
               {statusFilter !== 'all' && ` • ${statusFilter === 'paid' ? 'Paid' : 'Unpaid'}`}
               {stageFilter !== 'all' && ` • Stage: ${stageFilter}`}
             </p>
@@ -1422,7 +1476,7 @@ export default function ManagerOperationsPage() {
           <div className="fv-card p-8 text-center">
             <p className="text-sm text-muted-foreground">Loading work logs...</p>
           </div>
-        ) : filteredWorkLogs.length === 0 ? (
+        ) : combinedManagerEntries.length === 0 ? (
           <div className="fv-card p-8 text-center">
             <CalendarDays className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
             <h3 className="text-lg font-medium text-foreground mb-2">No Work Logs Found</h3>
@@ -1436,232 +1490,428 @@ export default function ManagerOperationsPage() {
           <div className="fv-card overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
-              <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="text-left p-3 text-sm font-medium text-muted-foreground">Date & Time</th>
-                  <th className="text-left p-3 text-sm font-medium text-muted-foreground">Work Category</th>
-                  <th className="text-left p-3 text-sm font-medium text-muted-foreground">Stage</th>
-                  {showPeopleSection && (
-                    <th className="text-left p-3 text-sm font-medium text-muted-foreground">People</th>
-                  )}
-                  <th className="text-left p-3 text-sm font-medium text-muted-foreground">Amount</th>
-                  <th className="text-left p-3 text-sm font-medium text-muted-foreground">Status</th>
-                  <th className="text-left p-3 text-sm font-medium text-muted-foreground">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredWorkLogs.map((log) => (
-                  <tr
-                    key={log.id}
-                    className={cn(
-                      "border-b hover:bg-muted/30 relative",
-                      log.paid && "after:content-['PAID'] after:absolute after:top-1/2 after:left-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:text-6xl after:font-bold after:text-red-500/10 after:rotate-[-35deg] after:pointer-events-none after:select-none after:z-0"
-                    )}
-                  >
-                    <td className="p-3 relative z-10">
-                      <div className="text-sm font-medium text-foreground">
-                        {formatLogDate(log.date)}
-                      </div>
-                    </td>
-                    <td className="p-3 relative z-10">
-                      <div className="font-medium text-foreground">{log.workCategory}</div>
-                      {log.notes && (
-                        <div className="text-xs text-muted-foreground truncate max-w-[200px]">
-                          {log.notes}
-                        </div>
-                      )}
-                    </td>
-                    <td className="p-3 relative z-10">
-                      <Badge variant="outline" className="text-xs">
-                        {log.stageName}
-                      </Badge>
-                    </td>
+                <thead>
+                  <tr className="border-b bg-muted-50">
+                    <th className="text-left p-3 text-sm font-medium text-muted-foreground">Date & Time</th>
+                    <th className="text-left p-3 text-sm font-medium text-muted-foreground">Work</th>
+                    <th className="text-left p-3 text-sm font-medium text-muted-foreground">Stage</th>
                     {showPeopleSection && (
-                      <td className="p-3 relative z-10">
-                        <div className="text-sm">
-                          {log.numberOfPeople} people
-                          {log.ratePerPerson && (
-                            <div className="text-xs text-muted-foreground">
-                              @ {formatCurrency(log.ratePerPerson)} each
-                            </div>
-                          )}
-                        </div>
-                      </td>
+                      <th className="text-left p-3 text-sm font-medium text-muted-foreground">People</th>
                     )}
-                    <td className="p-3 relative z-10">
-                      <div className="font-semibold text-foreground">
-                        {log.totalPrice ? formatCurrency(log.totalPrice) : 'N/A'}
-                      </div>
-                    </td>
-                    <td className="p-3 relative z-10">
-                      <Badge
+                    <th className="text-left p-3 text-sm font-medium text-muted-foreground">Amount</th>
+                    <th className="text-left p-3 text-sm font-medium text-muted-foreground">Status</th>
+                    <th className="text-left p-3 text-sm font-medium text-muted-foreground">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {combinedManagerEntries.map((entry) =>
+                    entry.type === 'workLog' ? (
+                      <tr
+                        key={`log-${entry.log.id}`}
                         className={cn(
-                          'capitalize',
-                          log.paid
-                            ? 'bg-green-100 text-green-800 hover:bg-green-100'
-                            : 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100'
+                          "border-b hover:bg-muted/30 relative",
+                          entry.log.paid &&
+                            "after:content-['PAID'] after:absolute after:top-1/2 after:left-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:text-6xl after:font-bold after:text-red-500/10 after:rotate-[-35deg] after:pointer-events-none after:select-none after:z-0"
                         )}
                       >
-                        {log.paid ? 'Paid' : 'Unpaid'}
-                      </Badge>
-                    </td>
-                    <td className="p-3 relative z-10">
-                      <div className="flex gap-2 flex-wrap">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleViewLog(log);
-                          }}
-                        >
-                          <Eye className="h-4 w-4 mr-1" />
-                          View
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const d = toDate(log.date);
-                            setLogDate(d || new Date());
-                            setLogWorkType(log.workType || log.workCategory || '');
-                            setLogNumberOfPeople('');
-                            setLogRatePerPerson('');
-                            setLogDrumsSprayed('');
-                            setLogWateringContainers('');
-                            setLogTyingUsedType('ropes');
-                            setLogNotes('');
-                            setLogInputs([]);
-                            setLogDailyWorkOpen(true);
-                          }}
-                        >
-                          Record work
-                        </Button>
-                        {!log.paid && (log.managerSubmittedAt != null || !log.adminName) && (
-                          <Button
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleMarkAsPaid(log);
-                            }}
-                            disabled={markingPaid}
-                          >
-                            <CheckCircle className="h-4 w-4 mr-1" />
-                            Mark Paid
-                          </Button>
+                        <td className="p-3 relative z-10">
+                          <div className="text-sm font-medium text-foreground">
+                            {formatLogDate(entry.log.date)}
+                          </div>
+                        </td>
+                        <td className="p-3 relative z-10">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">
+                              {getWorkTypeIcon(entry.log.workCategory)}
+                            </span>
+                            <div>
+                              <div className="font-medium text-foreground">{entry.log.workCategory}</div>
+                              {entry.log.notes && (
+                                <div className="text-xs text-muted-foreground truncate max-w-[200px]">
+                                  {entry.log.notes}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="p-3 relative z-10">
+                          <Badge variant="outline" className="text-xs">
+                            {entry.log.stageName}
+                          </Badge>
+                        </td>
+                        {showPeopleSection && (
+                          <td className="p-3 relative z-10">
+                            <div className="text-sm">
+                              {entry.log.numberOfPeople} people
+                              {entry.log.ratePerPerson && (
+                                <div className="text-xs text-muted-foreground">
+                                  @ {formatCurrency(entry.log.ratePerPerson)} each
+                                </div>
+                              )}
+                            </div>
+                          </td>
                         )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
+                        <td className="p-3 relative z-10">
+                          <div className="font-semibold text-foreground">
+                            {entry.log.totalPrice ? formatCurrency(entry.log.totalPrice) : 'N/A'}
+                          </div>
+                        </td>
+                        <td className="p-3 relative z-10">
+                          <Badge
+                            className={cn(
+                              'capitalize',
+                              entry.log.paid
+                                ? 'bg-green-100 text-green-800 hover:bg-green-100'
+                                : 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100'
+                            )}
+                          >
+                            {entry.log.paid ? 'Paid' : 'Unpaid'}
+                          </Badge>
+                        </td>
+                        <td className="p-3 relative z-10">
+                          <div className="flex gap-2 flex-wrap">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleViewLog(entry.log);
+                              }}
+                            >
+                              <Eye className="h-4 w-4 mr-1" />
+                              View
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const d = toDate(entry.log.date);
+                                setLogDate(d || new Date());
+                                setLogWorkType(entry.log.workType || entry.log.workCategory || '');
+                                setLogNumberOfPeople('');
+                                setLogRatePerPerson('');
+                                setLogDrumsSprayed('');
+                                setLogWateringContainers('');
+                                setLogTyingUsedType('ropes');
+                                setLogNotes('');
+                                setLogInputs([]);
+                                setLogDailyWorkOpen(true);
+                              }}
+                            >
+                              Record work
+                            </Button>
+                            {!entry.log.paid && (entry.log.managerSubmittedAt != null || !entry.log.adminName) && (
+                              <Button
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleMarkAsPaid(entry.log);
+                                }}
+                                disabled={markingPaid}
+                              >
+                                <CheckCircle className="h-4 w-4 mr-1" />
+                                Mark Paid
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      <tr
+                        key={`card-${entry.card.id}`}
+                        className={cn(
+                          "border-b hover:bg-muted/30 relative",
+                          (entry.card.payment?.isPaid || entry.card.status === 'paid') &&
+                            "after:content-['PAID'] after:absolute after:top-1/2 after:left-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:text-6xl after:font-bold after:text-red-500/10 after:rotate-[-35deg] after:pointer-events-none after:select-none after:z-0"
+                        )}
+                      >
+                        <td className="p-3 relative z-10">
+                          <div className="text-sm font-medium text-foreground">
+                            {formatLogDate(
+                              (entry.card.actual?.actualDate as any) ??
+                              (entry.card.approvedAt as any) ??
+                              (entry.card.createdAt as any)
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-3 relative z-10">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">
+                              {getWorkTypeIcon(entry.card.workTitle || entry.card.workCategory)}
+                            </span>
+                            <div>
+                              <div className="font-medium text-foreground">
+                                {entry.card.workTitle || entry.card.workCategory}
+                              </div>
+                              {entry.card.actual?.notes && (
+                                <div className="text-xs text-muted-foreground truncate max-w-[200px]">
+                                  {entry.card.actual.notes}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="p-3 relative z-10">
+                          <Badge variant="outline" className="text-xs">
+                            {entry.card.stageName || entry.card.stageId || '—'}
+                          </Badge>
+                        </td>
+                        {showPeopleSection && (
+                          <td className="p-3 relative z-10">
+                            <div className="text-sm">
+                              {(entry.card.actual?.actualWorkers ?? 0)} people
+                              {entry.card.actual?.ratePerPerson != null && (
+                                <div className="text-xs text-muted-foreground">
+                                  @ {formatCurrency(entry.card.actual.ratePerPerson)} each
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        )}
+                        <td className="p-3 relative z-10">
+                          <div className="font-semibold text-foreground">
+                            {entry.card.actual?.actualWorkers != null &&
+                            entry.card.actual?.ratePerPerson != null
+                              ? formatCurrency(
+                                  entry.card.actual.actualWorkers * entry.card.actual.ratePerPerson
+                                )
+                              : 'N/A'}
+                          </div>
+                        </td>
+                        <td className="p-3 relative z-10">
+                          <Badge
+                            className={cn(
+                              'capitalize',
+                              (entry.card.payment?.isPaid || entry.card.status === 'paid')
+                                ? 'bg-green-100 text-green-800 hover:bg-green-100'
+                                : 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100'
+                            )}
+                          >
+                            {(entry.card.payment?.isPaid || entry.card.status === 'paid') ? 'Paid' : 'Approved'}
+                          </Badge>
+                        </td>
+                        <td className="p-3 relative z-10">
+                          <div className="flex gap-2 flex-wrap">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedWorkCard(entry.card);
+                                setWorkCardViewOpen(true);
+                              }}
+                            >
+                              <Eye className="h-4 w-4 mr-1" />
+                              View card
+                            </Button>
+                            {canManagerSubmit(entry.card, managerIdsForCurrentUser) &&
+                              !entry.card.payment?.isPaid && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openWorkCardRecord(entry.card);
+                                  }}
+                                >
+                                  Record work
+                                </Button>
+                              )}
+                            {canMarkAsPaid(entry.card) && !entry.card.payment?.isPaid && (
+                              <Button
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleMarkWorkCardPaid(entry.card);
+                                }}
+                                disabled={markingWorkCardPaid}
+                              >
+                                <CheckCircle className="h-4 w-4 mr-1" />
+                                Mark Paid
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  )}
+                </tbody>
               </table>
             </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {filteredWorkLogs.map((log) => (
-              <div
-                key={log.id}
-                className={cn(
-                  "fv-card relative p-4 overflow-hidden",
-                  log.paid && "after:content-['PAID'] after:absolute after:top-1/2 after:left-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:text-6xl after:font-bold after:text-red-500/15 after:rotate-[-35deg] after:pointer-events-none after:select-none after:z-0"
-                )}
-              >
-                <div className="relative z-10 space-y-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h4 className="font-semibold text-foreground">{log.workCategory}</h4>
-                        <Badge
-                          className={cn(
-                            'capitalize text-xs',
-                            log.paid
-                              ? 'bg-green-100 text-green-800'
-                              : 'bg-yellow-100 text-yellow-800'
-                          )}
-                        >
-                          {log.paid ? 'Paid' : 'Unpaid'}
-                        </Badge>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        {formatLogDate(log.date)} • {log.stageName}
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-1 text-sm">
-                    {showPeopleSection && (
-                      <p className="text-muted-foreground">
-                        {log.numberOfPeople} people
-                        {log.ratePerPerson && ` @ ${formatCurrency(log.ratePerPerson)}`}
-                      </p>
-                    )}
-                    {log.totalPrice && (
-                      <p className="font-semibold text-foreground">
-                        Total: {formatCurrency(log.totalPrice)}
-                      </p>
-                    )}
-                  </div>
-
-                  {log.notes && (
-                    <p className="text-xs text-muted-foreground line-clamp-2">
-                      {log.notes}
-                    </p>
+            {combinedManagerEntries.map((entry) =>
+              entry.type === 'workLog' ? (
+                <div
+                  key={`log-${entry.log.id}`}
+                  className={cn(
+                    "fv-card relative p-4 overflow-hidden",
+                    entry.log.paid && "after:content-['PAID'] after:absolute after:top-1/2 after:left-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:text-6xl after:font-bold after:text-red-500/15 after:rotate-[-35deg] after:pointer-events-none after:select-none after:z-0"
                   )}
+                >
+                  <div className="relative z-10 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-lg">
+                            {getWorkTypeIcon(entry.log.workCategory)}
+                          </span>
+                          <h4 className="font-semibold text-foreground">{entry.log.workCategory}</h4>
+                          <Badge
+                            className={cn(
+                              'capitalize text-xs',
+                              entry.log.paid
+                                ? 'bg-green-100 text-green-800'
+                                : 'bg-yellow-100 text-yellow-800'
+                            )}
+                          >
+                            {entry.log.paid ? 'Paid' : 'Unpaid'}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {formatLogDate(entry.log.date)} • {entry.log.stageName}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-1 text-sm">
+                      {showPeopleSection && (
+                        <p className="text-muted-foreground">
+                          {entry.log.numberOfPeople} people
+                          {entry.log.ratePerPerson && ` @ ${formatCurrency(entry.log.ratePerPerson)}`}
+                        </p>
+                      )}
+                      {entry.log.totalPrice && (
+                        <p className="font-semibold text-foreground">
+                          Total: {formatCurrency(entry.log.totalPrice)}
+                        </p>
+                      )}
+                    </div>
 
-                  <div className="flex gap-2 pt-2 flex-wrap">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleViewLog(log)}
-                      className="flex-1 min-w-0"
-                    >
-                      <Eye className="h-4 w-4 mr-1" />
-                      View
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const project = log.projectId ? projects.find((p) => p.id === log.projectId) : null;
-                        if (project) setActiveProject(project);
-                        const d = toDate(log.date);
-                        setLogDate(d || new Date());
-                        setLogWorkType(log.workType || log.workCategory || '');
-                        setLogNumberOfPeople('');
-                        setLogRatePerPerson('');
-                        setLogDrumsSprayed('');
-                        setLogWateringContainers('');
-                        setLogTyingUsedType('ropes');
-                        setLogNotes('');
-                        setLogInputs([]);
-                        setLogDailyWorkOpen(true);
-                      }}
-                      className="flex-1 min-w-0"
-                    >
-                      Record work
-                    </Button>
-                    {!log.paid && (log.managerSubmittedAt != null || !log.adminName) && (
+                    {entry.log.notes && (
+                      <p className="text-xs text-muted-foreground line-clamp-2">
+                        {entry.log.notes}
+                      </p>
+                    )}
+
+                    <div className="flex gap-2 pt-2 flex-wrap">
                       <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleViewLog(entry.log)}
+                        className="flex-1 min-w-0"
+                      >
+                        <Eye className="h-4 w-4 mr-1" />
+                        View
+                      </Button>
+                      <Button
+                        variant="outline"
                         size="sm"
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleMarkAsPaid(log);
+                          const project = entry.log.projectId ? projects.find((p) => p.id === entry.log.projectId) : null;
+                          if (project) setActiveProject(project);
+                          const d = toDate(entry.log.date);
+                          setLogDate(d || new Date());
+                          setLogWorkType(entry.log.workType || entry.log.workCategory || '');
+                          setLogNumberOfPeople('');
+                          setLogRatePerPerson('');
+                          setLogDrumsSprayed('');
+                          setLogWateringContainers('');
+                          setLogTyingUsedType('ropes');
+                          setLogNotes('');
+                          setLogInputs([]);
+                          setLogDailyWorkOpen(true);
                         }}
-                        disabled={markingPaid}
                         className="flex-1 min-w-0"
                       >
-                        <CheckCircle className="h-4 w-4 mr-1" />
-                        Mark Paid
+                        Record work
                       </Button>
+                      {!entry.log.paid && (entry.log.managerSubmittedAt != null || !entry.log.adminName) && (
+                        <Button
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleMarkAsPaid(entry.log);
+                          }}
+                          disabled={markingPaid}
+                          className="flex-1 min-w-0"
+                        >
+                          <CheckCircle className="h-4 w-4 mr-1" />
+                          Mark Paid
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  key={`card-${entry.card.id}`}
+                  className={cn(
+                    "fv-card relative p-4 overflow-hidden",
+                    (entry.card.payment?.isPaid || entry.card.status === 'paid') && "after:content-['PAID'] after:absolute after:top-1/2 after:left-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:text-6xl after:font-bold after:text-red-500/15 after:rotate-[-35deg] after:pointer-events-none after:select-none after:z-0"
+                  )}
+                >
+                  <div className="relative z-10 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-lg">
+                            {getWorkTypeIcon(entry.card.workTitle || entry.card.workCategory)}
+                          </span>
+                          <h4 className="font-semibold text-foreground">
+                            {entry.card.workTitle || entry.card.workCategory}
+                          </h4>
+                          <Badge
+                            className={cn(
+                              'capitalize text-xs',
+                              (entry.card.payment?.isPaid || entry.card.status === 'paid')
+                                ? 'bg-green-100 text-green-800'
+                                : 'bg-emerald-100 text-emerald-800'
+                            )}
+                          >
+                            {(entry.card.payment?.isPaid || entry.card.status === 'paid') ? 'Paid' : 'Approved'}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {formatLogDate(
+                            (entry.card.actual?.actualDate as any) ??
+                            (entry.card.approvedAt as any) ??
+                            (entry.card.createdAt as any)
+                          )}{' '}
+                          • {entry.card.stageName || entry.card.stageId || '—'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1 text-sm">
+                      <p className="text-muted-foreground">
+                        {(entry.card.actual?.actualWorkers ?? 0)} people
+                        {entry.card.actual?.ratePerPerson != null &&
+                          ` @ ${formatCurrency(entry.card.actual.ratePerPerson)}`}
+                      </p>
+                      {(entry.card.actual?.actualWorkers != null &&
+                        entry.card.actual?.ratePerPerson != null) && (
+                        <p className="font-semibold text-foreground">
+                          Total:{' '}
+                          {formatCurrency(
+                            entry.card.actual.actualWorkers * entry.card.actual.ratePerPerson
+                          )}
+                        </p>
+                      )}
+                    </div>
+
+                    {entry.card.actual?.notes && (
+                      <p className="text-xs text-muted-foreground line-clamp-2">
+                        {entry.card.actual.notes}
+                      </p>
                     )}
                   </div>
                 </div>
-              </div>
-            ))}
+              )
+            )}
           </div>
         )}
       </div>
