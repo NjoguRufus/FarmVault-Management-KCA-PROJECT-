@@ -156,6 +156,20 @@ export default function OperationsPage() {
     }, 0);
   }, [workCardsForProject]);
 
+  const operationsStats = useMemo(() => {
+    const paidLogs = workLogs.filter((w) => w.paid).length;
+    const paidCards = workCardsForProject.filter((c) => c.payment?.isPaid || c.status === 'paid').length;
+    const unpaidLogs = workLogs.filter((w) => !w.paid).length;
+    const unpaidCards = workCardsForProject.filter((c) => !(c.payment?.isPaid || c.status === 'paid')).length;
+    const labourFromLogs = workLogs.reduce((sum, log) => sum + (log.totalPrice ?? log.managerSubmittedTotalPrice ?? 0), 0);
+    return {
+      paid: paidLogs + paidCards,
+      unpaid: unpaidLogs + unpaidCards,
+      total: workLogs.length + workCardsForProject.length,
+      totalLabour: totalLabourFromWorkCards + labourFromLogs,
+    };
+  }, [workLogs, workCardsForProject, totalLabourFromWorkCards]);
+
   const [addCardOpen, setAddCardOpen] = useState(false);
   const [selectedWorkCard, setSelectedWorkCard] = useState<OperationsWorkCard | null>(null);
   const [workCardModalOpen, setWorkCardModalOpen] = useState(false);
@@ -1103,29 +1117,29 @@ export default function OperationsPage() {
         </div>
       </div>
 
-      {/* Stats */}
+      {/* Stats: include both work logs and work cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
         <SimpleStatCard
-          title="Paid logs"
-          value={workLogs.filter((w) => w.paid).length}
+          title="Paid"
+          value={operationsStats.paid}
           icon={CheckCircle}
           iconVariant="success"
         />
         <SimpleStatCard
-          title="Unpaid logs"
-          value={workLogs.filter((w) => !w.paid).length}
+          title="Unpaid"
+          value={operationsStats.unpaid}
           icon={Clock}
           iconVariant="warning"
         />
         <SimpleStatCard
-          title="Total logs"
-          value={workLogs.length}
+          title="Total logs & cards"
+          value={operationsStats.total}
           icon={CalendarDays}
           iconVariant="info"
         />
         <SimpleStatCard
           title="Total labour"
-          value={`KES ${totalLabourFromWorkCards.toLocaleString()}`}
+          value={`KES ${operationsStats.totalLabour.toLocaleString()}`}
           icon={Banknote}
           iconVariant="primary"
         />
@@ -1134,16 +1148,22 @@ export default function OperationsPage() {
       {/* Work Cards (Admin-created; Manager submits execution) */}
       {workCardsForProject.length > 0 && (
         <div className="space-y-3">
-          <h2 className="font-semibold text-foreground">Work Cards</h2>
+          <h2 className="font-heading font-semibold text-foreground text-lg">Work cards</h2>
           <p className="text-sm text-muted-foreground">
-            Cards you created. Managers submit execution data into these; compare Planned vs Actual and Approve/Reject.
+            Cards you created. Managers submit execution into these; you compare <span className="font-medium text-foreground">Planned vs Actual</span> and
+            {' '}<span className="font-medium text-foreground">Approve / Reject</span>.
           </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {workCardsForProject.map((card) => (
               <div
                 key={card.id}
                 className={cn(
-                  'fv-card p-4 cursor-pointer hover:shadow-md transition-shadow relative overflow-hidden',
+                  'fv-card p-4 cursor-pointer hover:shadow-md hover:-translate-y-[1px] transition-all relative overflow-hidden border border-border/70',
+                  (card.status === 'paid' || card.payment?.isPaid) && 'bg-emerald-50/40',
+                  card.status === 'approved' && 'bg-emerald-50/40',
+                  card.status === 'submitted' && 'bg-amber-50/40',
+                  card.status === 'rejected' && 'bg-destructive/5',
+                  card.status === 'planned' && 'bg-muted/40',
                 )}
                 onClick={() => {
                   setSelectedWorkCard(card);
@@ -1155,7 +1175,7 @@ export default function OperationsPage() {
                 {/* Status watermark */}
                 <span
                   className={cn(
-                    'absolute inset-0 flex items-center justify-center pointer-events-none select-none z-0 text-4xl md:text-5xl font-bold rotate-[-22deg] opacity-[0.12]',
+                    'absolute inset-0 flex items-center justify-center pointer-events-none select-none z-0 text-4xl md:text-5xl font-bold rotate-[-22deg] opacity-[0.09]',
                     (card.status === 'paid' || card.payment?.isPaid) && 'text-emerald-600',
                     card.status === 'approved' && 'text-emerald-600',
                     card.status === 'rejected' && 'text-destructive',
@@ -1166,26 +1186,61 @@ export default function OperationsPage() {
                 >
                   {(card.status === 'paid' || card.payment?.isPaid) ? 'PAID' : card.status.toUpperCase()}
                 </span>
-                <div className="flex items-start justify-between gap-2 relative z-10">
-                  <div>
-                    <p className="font-medium text-foreground">{card.workTitle || card.workCategory}</p>
-                    <p className="text-xs text-muted-foreground">{card.stageName || card.stageId} • {card.planned?.workers ?? 0} workers</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Status: <span className="capitalize font-medium">{card.status}</span>
-                      {card.allocatedManagerId && (
-                        <> • Manager: {getAssigneeName(card.allocatedManagerId)}</>
-                      )}
-                    </p>
+                <div className="relative z-10 flex flex-col gap-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-foreground truncate">
+                          {card.workTitle || card.workCategory}
+                        </p>
+                        <span className={cn(
+                          'fv-badge capitalize text-[11px]',
+                          card.status === 'paid' && 'fv-badge--active',
+                          card.status === 'approved' && 'bg-emerald-100 text-emerald-800',
+                          card.status === 'submitted' && 'bg-amber-100 text-amber-800',
+                          card.status === 'rejected' && 'bg-destructive/10 text-destructive',
+                          card.status === 'planned' && 'bg-muted text-muted-foreground',
+                        )}>
+                          {card.status}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">
+                        Stage: <span className="font-medium text-foreground">{card.stageName || card.stageId || '—'}</span>
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Workers planned:{' '}
+                        <span className="font-medium text-foreground">
+                          {card.planned?.workers ?? 0}
+                        </span>
+                        {card.allocatedManagerId && (
+                          <>
+                            {' '}• Manager:{' '}
+                            <span className="font-medium text-foreground">
+                              {getAssigneeName(card.allocatedManagerId)}
+                            </span>
+                          </>
+                        )}
+                      </p>
+                    </div>
                   </div>
-                  <span className={cn(
-                    'fv-badge capitalize text-xs',
-                    card.status === 'paid' && 'fv-badge--active',
-                    card.status === 'approved' && 'bg-emerald-100 text-emerald-800',
-                    card.status === 'submitted' && 'bg-amber-100 text-amber-800',
-                    card.status === 'rejected' && 'bg-destructive/10 text-destructive',
-                  )}>
-                    {card.status}
-                  </span>
+
+                  {/* Quick status summary strip */}
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-background/70 px-2 py-0.5 border border-border/60">
+                      <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                      <span className="capitalize font-medium">{card.status}</span>
+                    </span>
+                    {card.payment?.isPaid && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-800 border border-emerald-200">
+                        Paid
+                      </span>
+                    )}
+                    {!card.payment?.isPaid && (card.status === 'approved' || card.status === 'submitted') && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-amber-800 border border-amber-200">
+                        Pending payment
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
@@ -1434,7 +1489,16 @@ export default function OperationsPage() {
                   {selectedWorkCard.workTitle || selectedWorkCard.workCategory}
                 </h3>
                 <div className="flex items-center gap-2">
-                  <button type="button" onClick={startEditWorkCard} className="fv-btn fv-btn--secondary text-sm">
+                  <button
+                    type="button"
+                    onClick={startEditWorkCard}
+                    className={cn(
+                      'fv-btn fv-btn--secondary text-sm',
+                      selectedWorkCard.status !== 'planned' && 'opacity-60 cursor-not-allowed'
+                    )}
+                    disabled={selectedWorkCard.status !== 'planned'}
+                    title={selectedWorkCard.status !== 'planned' ? 'Edit is disabled after manager has submitted' : undefined}
+                  >
                     Edit planned
                   </button>
                   <span className={cn('fv-badge capitalize', selectedWorkCard.status === 'submitted' && 'bg-amber-100 text-amber-800')}>
