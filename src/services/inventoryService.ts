@@ -2,8 +2,11 @@ import {
   collection,
   addDoc,
   doc,
+  getDoc,
+  updateDoc,
   writeBatch,
   serverTimestamp,
+  increment,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { InventoryItem, InventoryPurchase, InventoryUsage, InventoryCategory } from '@/types';
@@ -75,6 +78,67 @@ export async function recordInventoryUsage(input: RecordUsageInput) {
   await addDoc(collection(db, 'inventoryUsage'), {
     ...usage,
     date: input.date,
+    createdAt: serverTimestamp(),
+  });
+}
+
+export type DeductForWorkCardInput = {
+  companyId: string;
+  projectId: string;
+  inventoryItemId: string;
+  quantity: number;
+  stageName?: string;
+  workCardId: string;
+  date: Date;
+  /** Manager who submitted the work (for usage record). */
+  managerName?: string;
+};
+
+/** Deduct inventory for a work card (after admin approves). Decrements item quantity and records usage.
+ * One unit at a time: for chemical box, quantity = number of ITEMS (units) used, not boxes.
+ * E.g. 1 box has 12 items, using 2 means 2 units deducted; inventory is stored in units. */
+export async function deductInventoryForWorkCard(input: DeductForWorkCardInput): Promise<void> {
+  const { companyId, projectId, inventoryItemId, quantity, stageName, workCardId, date, managerName } = input;
+  if (!inventoryItemId || quantity <= 0) return;
+
+  const itemSnap = await getDoc(doc(db, 'inventoryItems', inventoryItemId));
+  if (!itemSnap.exists()) throw new Error('Inventory item not found');
+  const item = { id: itemSnap.id, ...itemSnap.data() } as InventoryItem;
+  if (item.companyId !== companyId) throw new Error('Item does not belong to company');
+
+  const it = item as InventoryItem & { packagingType?: string; unitsPerBox?: number };
+  const isChemicalBox = item.category === 'chemical' && it.packagingType === 'box' && (it.unitsPerBox ?? 0) > 0;
+  const unitsPerBox = isChemicalBox ? Number(it.unitsPerBox) : 1;
+
+  // Work card quantity = units (items) used. For chemical box we deduct that many units by converting to boxes.
+  const quantityToDeductFromStock = isChemicalBox ? quantity / unitsPerBox : quantity;
+  const currentQty = Number(item.quantity) || 0;
+  if (currentQty < quantityToDeductFromStock) {
+    const currentUnits = isChemicalBox ? Math.floor(currentQty * unitsPerBox) : currentQty;
+    throw new Error(`Insufficient stock: ${item.name} has ${isChemicalBox ? `${currentUnits} units` : currentQty + ' ' + item.unit}, need ${quantity} ${isChemicalBox ? 'units' : item.unit}`);
+  }
+
+  const itemRef = doc(db, 'inventoryItems', inventoryItemId);
+  await updateDoc(itemRef, {
+    quantity: increment(-quantityToDeductFromStock),
+    lastUpdated: serverTimestamp(),
+  });
+
+  // Record usage in units (items) so it's clear; manager stored for display
+  const quantityForUsage = quantity;
+  const unitForUsage = isChemicalBox ? 'units' : item.unit;
+  await addDoc(collection(db, 'inventoryUsage'), {
+    companyId,
+    projectId,
+    inventoryItemId,
+    category: item.category,
+    quantity: quantityForUsage,
+    unit: unitForUsage,
+    source: 'workCard',
+    workCardId,
+    managerName: managerName ?? undefined,
+    stageName: stageName ?? undefined,
+    date,
     createdAt: serverTimestamp(),
   });
 }

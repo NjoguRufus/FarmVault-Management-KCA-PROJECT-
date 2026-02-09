@@ -70,6 +70,11 @@ export default function ExpensesPage() {
       ? allExpenses.filter(e => e.projectId === activeProject.id)
       : allExpenses;
 
+    // When no project selected, scope to current user's company so labour/work card expenses show
+    if (!activeProject && user?.companyId) {
+      filtered = filtered.filter(e => e.companyId === user.companyId);
+    }
+
     // For brokers, only show expenses they paid for (related to their sales work)
     if (isBroker && user) {
       filtered = filtered.filter(e => e.paidBy === user.id);

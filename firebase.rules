@@ -91,6 +91,13 @@ service cloud.firestore {
       allow create: if isSignedIn() && (matchesCompanyOnCreate() || isDeveloper());
     }
 
+    // --- Operations Work Cards (Admin creates; Manager submits execution only) ---
+    match /operationsWorkCards/{cardId} {
+      allow read: if isSignedIn() && (resource.data.get('companyId', null) == userCompanyId() || isDeveloper());
+      allow create: if isSignedIn() && (matchesCompanyOnCreate() || isDeveloper());
+      allow update, delete: if isSignedIn() && (matchesCompanyOnDoc() || isDeveloper());
+    }
+
     // --- Expenses ---
 
     match /expenses/{expenseId} {
@@ -215,10 +222,10 @@ service cloud.firestore {
       allow delete: if isDeveloper();
     }
 
-    // --- Audit logs: developer-only read (written by backend/developer actions) ---
+    // --- Audit logs: create allowed for any signed-in user (app records WORK_CREATED etc.); read developer-only ---
     match /auditLogs/{logId} {
       allow read: if isDeveloper();
-      allow create: if isDeveloper();
+      allow create: if isSignedIn();
       allow update, delete: if false;
     }
 

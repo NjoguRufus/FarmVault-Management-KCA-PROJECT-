@@ -1,11 +1,11 @@
 import React, { useMemo, useState, useCallback, useEffect } from 'react';
-import { Plus, Search, Package, MoreHorizontal, AlertTriangle, ShoppingCart, Minus, Trash2, ScrollText } from 'lucide-react';
+import { Plus, Search, Package, MoreHorizontal, AlertTriangle, ShoppingCart, Minus, Trash2, ScrollText, History } from 'lucide-react';
 import { useProject } from '@/contexts/ProjectContext';
 import { cn } from '@/lib/utils';
 import { db } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp, doc, writeBatch, increment, updateDoc, deleteDoc } from 'firebase/firestore';
 import { useCollection } from '@/hooks/useCollection';
-import { InventoryItem, InventoryCategory, ExpenseCategory, Supplier, CropType, InventoryCategoryItem, NeededItem, ChemicalPackagingType, FuelType } from '@/types';
+import { InventoryItem, InventoryCategory, ExpenseCategory, Supplier, CropType, InventoryCategoryItem, NeededItem, ChemicalPackagingType, FuelType, InventoryUsage } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { SimpleStatCard } from '@/components/dashboard/SimpleStatCard';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
@@ -51,6 +51,24 @@ export default function InventoryPage() {
   const { data: allInventory = [], isLoading } = useCollection<InventoryItem>('inventoryItems', 'inventoryItems');
   const { data: suppliers = [] } = useCollection<Supplier>('suppliers', 'suppliers');
   const { data: neededItems = [] } = useCollection<NeededItem>('neededItems', 'neededItems');
+  const { data: allInventoryUsage = [] } = useCollection<InventoryUsage>('inventoryUsage', 'inventoryUsage');
+  const [usageModalItem, setUsageModalItem] = useState<InventoryItem | null>(null);
+
+  // Usage list for selected item, sorted with latest usage first
+  const usageForSelectedItem = useMemo(() => {
+    if (!usageModalItem?.id || !user?.companyId) return [];
+    return allInventoryUsage
+      .filter((u) => u.inventoryItemId === usageModalItem.id && u.companyId === user.companyId)
+      .sort((a, b) => {
+        const da = (a.date as any)?.toDate?.() ?? new Date(a.date as any);
+        const db = (b.date as any)?.toDate?.() ?? new Date(b.date as any);
+        const byDate = db.getTime() - da.getTime();
+        if (byDate !== 0) return byDate;
+        const ca = (a as any).createdAt?.toDate?.()?.getTime() ?? 0;
+        const cb = (b as any).createdAt?.toDate?.()?.getTime() ?? 0;
+        return cb - ca;
+      });
+  }, [allInventoryUsage, usageModalItem?.id, user?.companyId]);
   
   // Fetch categories for the company
   const { data: allCategories = [] } = useCollection<InventoryCategoryItem>(
@@ -1703,6 +1721,48 @@ export default function InventoryPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Usage (per item) */}
+      <Dialog open={!!usageModalItem} onOpenChange={(open) => !open && setUsageModalItem(null)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Usage — {usageModalItem?.name}</DialogTitle>
+            <DialogDescription>
+              When and where this item was used, and which manager was assigned (for work card usage).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="overflow-auto flex-1 min-h-0">
+            {usageForSelectedItem.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-6 text-center">No usage recorded for this item yet.</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-2 font-medium text-foreground">Date</th>
+                    <th className="text-left py-2 font-medium text-foreground">Quantity</th>
+                    <th className="text-left py-2 font-medium text-foreground">Source</th>
+                    <th className="text-left py-2 font-medium text-foreground">Manager</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {usageForSelectedItem.map((u) => {
+                    const date = (u.date as any)?.toDate?.() ?? new Date(u.date as any);
+                    const sourceLabel = u.source === 'workCard' ? 'Work card' : u.source === 'workLog' ? 'Work log' : 'Manual';
+                    return (
+                      <tr key={u.id} className="border-b border-border/50">
+                        <td className="py-2 text-muted-foreground">{formatDate(date)}</td>
+                        <td className="py-2 font-medium">{u.quantity} {u.unit}</td>
+                        <td className="py-2 text-muted-foreground">{sourceLabel}{u.stageName ? ` · ${u.stageName}` : ''}</td>
+                        <td className="py-2 text-muted-foreground">{u.managerName ?? '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Summary Stats */}
       <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 mb-6">
         <div
@@ -1876,6 +1936,10 @@ export default function InventoryPage() {
                           <Minus className="h-4 w-4 mr-2" />
                           Deduct
                         </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setUsageModalItem(item)}>
+                          <History className="h-4 w-4 mr-2" />
+                          Usage
+                        </DropdownMenuItem>
                         <DropdownMenuItem
                           className="text-destructive focus:text-destructive"
                           onClick={() => handleConfirmDelete(item)}
@@ -1922,6 +1986,7 @@ export default function InventoryPage() {
                     <DropdownMenuContent align="end" className="w-48">
                       <DropdownMenuItem onClick={() => handleOpenRestock(item)}><Plus className="h-4 w-4 mr-2" /> Restock</DropdownMenuItem>
                       <DropdownMenuItem onClick={() => handleOpenDeduct(item)}><Minus className="h-4 w-4 mr-2" /> Deduct</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setUsageModalItem(item)}><History className="h-4 w-4 mr-2" /> Usage</DropdownMenuItem>
                       <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => handleConfirmDelete(item)}><Trash2 className="h-4 w-4 mr-2" /> Delete</DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -2007,6 +2072,7 @@ export default function InventoryPage() {
                           </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-48">
+                          <DropdownMenuItem onClick={() => setUsageModalItem(item)}><History className="h-4 w-4 mr-2" /> Usage</DropdownMenuItem>
                           <DropdownMenuItem onClick={() => { setCategoryDrawerOpen(false); handleOpenRestock(item); }}><Plus className="h-4 w-4 mr-2" /> Restock</DropdownMenuItem>
                           <DropdownMenuItem onClick={() => { setCategoryDrawerOpen(false); handleOpenDeduct(item); }}><Minus className="h-4 w-4 mr-2" /> Deduct</DropdownMenuItem>
                           <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => { setCategoryDrawerOpen(false); handleConfirmDelete(item); }}><Trash2 className="h-4 w-4 mr-2" /> Delete</DropdownMenuItem>

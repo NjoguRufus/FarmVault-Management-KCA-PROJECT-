@@ -3,8 +3,15 @@ import { Search, CheckCircle, Clock, CalendarDays, Eye, Filter, Download, Bankno
 import { useProject } from '@/contexts/ProjectContext';
 import { cn, parseQuantityOrFraction } from '@/lib/utils';
 import { useCollection } from '@/hooks/useCollection';
-import { WorkLog, Employee, CropStage, InventoryItem, InventoryCategory, Expense, ExpenseCategory } from '@/types';
+import { WorkLog, Employee, CropStage, InventoryItem, InventoryCategory, Expense, ExpenseCategory, OperationsWorkCard } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
+import { useWorkCardsForCompany, useWorkCardsForManager, useInvalidateWorkCards } from '@/hooks/useWorkCards';
+import {
+  submitExecution,
+  markWorkCardPaid,
+  canManagerSubmit,
+  canMarkAsPaid,
+} from '@/services/operationsWorkCardService';
 import { SimpleStatCard } from '@/components/dashboard/SimpleStatCard';
 import {
   Dialog,
@@ -96,6 +103,22 @@ export default function ManagerOperationsPage() {
     if (myEmployee) ids.add(myEmployee.id);
     return ids;
   }, [user, allEmployees]);
+
+  const managerIdsArray = useMemo(() => Array.from(managerIdsForCurrentUser), [managerIdsForCurrentUser]);
+  const { data: managerWorkCards = [], isLoading: managerCardsLoading } = useWorkCardsForManager(managerIdsArray);
+  const { data: companyWorkCards = [], isLoading: companyCardsLoading } = useWorkCardsForCompany(user?.companyId ?? null, { refetchInterval: 5000 });
+  const workCards = useMemo(() => {
+    const fromManager = managerIdsArray.length > 0 ? managerWorkCards : [];
+    const fromCompany =
+      companyWorkCards.filter(
+        (card) => card.allocatedManagerId != null && managerIdsForCurrentUser.has(card.allocatedManagerId),
+      );
+    const byId = new Map<string, OperationsWorkCard>();
+    fromManager.forEach((c) => byId.set(c.id, c));
+    fromCompany.forEach((c) => byId.set(c.id, c));
+    return Array.from(byId.values());
+  }, [managerWorkCards, companyWorkCards, managerIdsForCurrentUser, managerIdsArray.length]);
+  const invalidateWorkCards = useInvalidateWorkCards();
 
   const isManagerOrAdmin = useMemo(() => {
     if (!user) return false;
@@ -253,12 +276,20 @@ export default function ManagerOperationsPage() {
     return Array.from(stages).sort();
   }, [managerWorkLogs]);
 
-  // Get stats
+  // Get stats: include both work logs and work cards so numbers reflect real work
   const stats = useMemo(() => {
-    const totalLogs = managerWorkLogs.length;
-    const paidLogs = managerWorkLogs.filter((log) => log.paid).length;
+    const logTotal = managerWorkLogs.length;
+    const logPaid = managerWorkLogs.filter((log) => log.paid).length;
+    const cardTotal = workCards.length;
+    const cardPaid = workCards.filter((c) => c.payment?.isPaid || c.status === 'paid').length;
+    const totalLogs = logTotal + cardTotal;
+    const paidLogs = logPaid + cardPaid;
     const unpaidLogs = totalLogs - paidLogs;
-    const totalAmount = managerWorkLogs.reduce((sum, log) => sum + (log.totalPrice || 0), 0);
+    const totalLabour = workCards.reduce((sum, card) => {
+      const w = card.actual?.actualWorkers ?? 0;
+      const r = card.actual?.ratePerPerson ?? 0;
+      return sum + w * r;
+    }, 0);
     const unpaidAmount = managerWorkLogs
       .filter((log) => !log.paid)
       .reduce((sum, log) => sum + (log.totalPrice || 0), 0);
@@ -267,10 +298,10 @@ export default function ManagerOperationsPage() {
       totalLogs,
       paidLogs,
       unpaidLogs,
-      totalAmount,
+      totalLabour,
       unpaidAmount,
     };
-  }, [managerWorkLogs]);
+  }, [managerWorkLogs, workCards]);
 
   // Helper functions
   const getPaidBadge = (paid?: boolean) =>
@@ -752,6 +783,141 @@ export default function ManagerOperationsPage() {
 
   const [markingPaid, setMarkingPaid] = useState(false);
 
+  // Work card (operationsWorkCards) state: View modal, Record modal, Mark Paid
+  const [selectedWorkCard, setSelectedWorkCard] = useState<OperationsWorkCard | null>(null);
+  const [workCardViewOpen, setWorkCardViewOpen] = useState(false);
+  const [workCardRecordOpen, setWorkCardRecordOpen] = useState(false);
+  const [recordActualWorkers, setRecordActualWorkers] = useState('');
+  const [recordActualInputs, setRecordActualInputs] = useState('');
+  const [recordActualFuel, setRecordActualFuel] = useState('');
+  const [recordActualChemicals, setRecordActualChemicals] = useState('');
+  const [recordActualFertilizer, setRecordActualFertilizer] = useState('');
+  const [recordNotes, setRecordNotes] = useState('');
+  const [recordResourceItemId, setRecordResourceItemId] = useState('');
+  const [recordResourceQuantity, setRecordResourceQuantity] = useState('');
+  const [recordResourceQuantitySecondary, setRecordResourceQuantitySecondary] = useState('');
+  const [recordRatePerPerson, setRecordRatePerPerson] = useState('');
+  const [submittingWorkCardRecord, setSubmittingWorkCardRecord] = useState(false);
+  const [markingWorkCardPaid, setMarkingWorkCardPaid] = useState(false);
+
+  const openWorkCardRecord = (card: OperationsWorkCard) => {
+    setSelectedWorkCard(card);
+    setRecordActualWorkers(card.actual?.actualWorkers != null ? String(card.actual.actualWorkers) : '');
+    setRecordRatePerPerson(card.actual?.ratePerPerson != null ? String(card.actual.ratePerPerson) : '');
+    setRecordActualInputs(card.actual?.actualInputsUsed ?? '');
+    setRecordActualFuel(card.actual?.actualFuelUsed ?? '');
+    setRecordActualChemicals(card.actual?.actualChemicalsUsed ?? '');
+    setRecordActualFertilizer(card.actual?.actualFertilizerUsed ?? '');
+    setRecordNotes(card.actual?.notes ?? '');
+    setRecordResourceItemId('');
+    setRecordResourceQuantity('');
+    setRecordResourceQuantitySecondary('');
+    setWorkCardRecordOpen(true);
+  };
+
+  /** Inventory for the Record Work modal (card's company) */
+  const recordModalInventory = useMemo(
+    () => (selectedWorkCard?.companyId ? allInventoryItems.filter((i) => i.companyId === selectedWorkCard.companyId) : []),
+    [allInventoryItems, selectedWorkCard?.companyId],
+  );
+  /** Resource items to show in Record modal based on card's work category (same as admin plan) */
+  const recordModalResourceItems = useMemo(() => {
+    if (!selectedWorkCard?.workCategory) return [];
+    const cat = selectedWorkCard.workCategory;
+    if (cat === 'Fertilizer application') return recordModalInventory.filter((i) => i.category === 'fertilizer');
+    if (cat === 'Spraying') return recordModalInventory.filter((i) => i.category === 'chemical');
+    if (cat === 'Watering') return recordModalInventory.filter((i) => i.category === 'fuel' || i.category === 'diesel');
+    if (cat === 'Tying of crops') return recordModalInventory.filter((i) => i.category === 'ropes' || i.category === 'sacks');
+    if (cat === 'Weeding') return recordModalInventory.filter((i) => ['materials', 'ropes', 'sacks'].includes(i.category));
+    return recordModalInventory.filter((i) => ['materials', 'ropes', 'sacks'].includes(i.category));
+  }, [selectedWorkCard?.workCategory, recordModalInventory]);
+  const recordModalSelectedItem = recordResourceItemId ? recordModalInventory.find((i) => i.id === recordResourceItemId) : null;
+
+  const handleSubmitWorkCardRecord = async () => {
+    if (!user || !selectedWorkCard) return;
+    if (!canManagerSubmit(selectedWorkCard, managerIdsForCurrentUser)) return;
+    const cat = selectedWorkCard.workCategory;
+    const item = recordModalSelectedItem;
+    let actualInputsUsed: string | undefined;
+    let actualFuelUsed: string | undefined;
+    let actualChemicalsUsed: string | undefined;
+    let actualFertilizerUsed: string | undefined;
+    if (item && recordResourceQuantity) {
+      const q = recordResourceQuantity.trim();
+      const q2 = recordResourceQuantitySecondary?.trim();
+      const unitLabel = item.category === 'fertilizer' ? 'bags' : item.category === 'fuel' || item.category === 'diesel' ? 'containers' : item.unit || '';
+      let str = `${item.name} - ${q}${unitLabel ? ` ${unitLabel}` : ''}`;
+      if (q2) {
+        if (item.category === 'fertilizer') str += `, ${q2} kg`;
+        else if (item.category === 'fuel' || item.category === 'diesel') str += `, ${q2} L`;
+      }
+      if (cat === 'Fertilizer application') actualFertilizerUsed = str;
+      else if (cat === 'Spraying') actualChemicalsUsed = str;
+      else if (cat === 'Watering') actualFuelUsed = str;
+      else actualInputsUsed = str;
+    } else {
+      if (cat === 'Fertilizer application') actualFertilizerUsed = recordActualFertilizer || undefined;
+      else if (cat === 'Spraying') actualChemicalsUsed = recordActualChemicals || undefined;
+      else if (cat === 'Watering') actualFuelUsed = recordActualFuel || undefined;
+      else actualInputsUsed = recordActualInputs || undefined;
+    }
+    const resourceQty = item && recordResourceQuantity ? parseQuantityOrFraction(recordResourceQuantity) : 0;
+    const resourceQtySecondary = item && recordResourceQuantitySecondary ? parseQuantityOrFraction(recordResourceQuantitySecondary) : undefined;
+
+    setSubmittingWorkCardRecord(true);
+    try {
+      await submitExecution({
+        cardId: selectedWorkCard.id,
+        managerId: user.id,
+        managerName: user.name,
+        managerIds: Array.from(managerIdsForCurrentUser),
+        actualWorkers: recordActualWorkers ? Number(recordActualWorkers) : undefined,
+        ratePerPerson: recordRatePerPerson ? Number(recordRatePerPerson) : undefined,
+        actualInputsUsed,
+        actualFuelUsed,
+        actualChemicalsUsed,
+        actualFertilizerUsed,
+        actualResourceItemId: item && resourceQty > 0 ? item.id : undefined,
+        actualResourceQuantity: item && resourceQty > 0 ? resourceQty : undefined,
+        actualResourceQuantitySecondary: resourceQtySecondary != null && resourceQtySecondary > 0 ? resourceQtySecondary : undefined,
+        notes: recordNotes || undefined,
+        actorEmail: user.email,
+        actorUid: user.id,
+      });
+      invalidateWorkCards();
+      setWorkCardRecordOpen(false);
+      setSelectedWorkCard(null);
+    } catch (e) {
+      console.error(e);
+      alert('Failed to submit work. Please try again.');
+    } finally {
+      setSubmittingWorkCardRecord(false);
+    }
+  };
+
+  const handleMarkWorkCardPaid = async (card: OperationsWorkCard) => {
+    if (!user || !canMarkAsPaid(card)) return;
+    setMarkingWorkCardPaid(true);
+    try {
+      await markWorkCardPaid({
+        cardId: card.id,
+        paidBy: user.id,
+        paidByName: user.name,
+        actorEmail: user.email,
+        actorUid: user.id,
+      });
+      invalidateWorkCards();
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-expenses'] });
+      if (selectedWorkCard?.id === card.id) setSelectedWorkCard({ ...card, status: 'paid', payment: { ...card.payment, isPaid: true } });
+    } catch (e) {
+      console.error(e);
+      alert('Failed to mark as paid.');
+    } finally {
+      setMarkingWorkCardPaid(false);
+    }
+  };
+
   const handleMarkAsPaid = async (log: WorkLog) => {
     if (!user || !log.id) return;
     setMarkingPaid(true);
@@ -919,8 +1085,8 @@ export default function ManagerOperationsPage() {
           className="cursor-pointer"
         >
           <SimpleStatCard
-            title="Total Amount"
-            value={formatCurrency(stats.totalAmount)}
+            title="Total labour"
+            value={formatCurrency(stats.totalLabour)}
             icon={Banknote}
             iconVariant="primary"
             layout="mobile-compact"
@@ -928,7 +1094,99 @@ export default function ManagerOperationsPage() {
         </div>
       </div>
 
-      {/* Assigned Work Plans from Admin */}
+      {/* Work Cards (Admin-created; Manager only submits execution — never creates) */}
+      {user && (user.companyId || managerIdsArray.length > 0) && (
+        <div className="space-y-3">
+          <div>
+            <h2 className="font-semibold text-foreground mb-1">My Work Cards</h2>
+            <p className="text-sm text-muted-foreground">
+              Work cards created by Admin and assigned to you. Use <strong>Record Work</strong> to submit execution data into the same card (no new cards).
+            </p>
+          </div>
+          {workCards.length === 0 ? (
+            <div className="fv-card p-6 text-center text-muted-foreground">
+              <p className="font-medium text-foreground">No work cards assigned to you yet</p>
+              <p className="text-sm mt-1">When an admin creates a work card and allocates it to you, it will appear here.</p>
+            </div>
+          ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {workCards.map((card) => (
+              <div
+                key={card.id}
+                className={cn(
+                  'fv-card p-4 hover:shadow-md transition-shadow relative overflow-hidden',
+                )}
+              >
+                {/* Status watermark */}
+                <span
+                  className={cn(
+                    'absolute inset-0 flex items-center justify-center pointer-events-none select-none z-0 text-4xl md:text-5xl font-bold rotate-[-22deg] opacity-[0.12]',
+                    (card.status === 'paid' || card.payment?.isPaid) && 'text-emerald-600',
+                    card.status === 'approved' && 'text-emerald-600',
+                    card.status === 'rejected' && 'text-destructive',
+                    card.status === 'submitted' && 'text-amber-600',
+                    card.status === 'planned' && 'text-muted-foreground',
+                  )}
+                  aria-hidden
+                >
+                  {(card.status === 'paid' || card.payment?.isPaid) ? 'PAID' : card.status.toUpperCase()}
+                </span>
+                <div className="space-y-2 relative z-10">
+                  <p className="font-medium text-foreground">{card.workTitle || card.workCategory}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {card.stageName || card.stageId} • Planned: {card.planned?.workers ?? 0} workers
+                    {card.planned?.estimatedCost != null && ` • KES ${Number(card.planned.estimatedCost).toLocaleString()}`}
+                  </p>
+                  <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <span>Status:</span>
+                    <Badge variant="outline" className="capitalize">{card.status}</Badge>
+                  </div>
+                  {card.actual?.submitted && card.actual?.actualWorkers != null && card.actual?.ratePerPerson != null && card.actual.actualWorkers > 0 && card.actual.ratePerPerson > 0 && (
+                    <p className="text-xs text-foreground">
+                      Labour: {card.actual.actualWorkers} × KES {card.actual.ratePerPerson.toLocaleString()} = KES {(card.actual.actualWorkers * card.actual.ratePerPerson).toLocaleString()}
+                      {card.payment?.isPaid && ' (expense recorded)'}
+                    </p>
+                  )}
+                  <div className="flex gap-2 pt-2 flex-wrap">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedWorkCard(card);
+                        setWorkCardViewOpen(true);
+                      }}
+                    >
+                      <Eye className="h-4 w-4 mr-1" />
+                      View
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openWorkCardRecord(card)}
+                      disabled={!canManagerSubmit(card, managerIdsForCurrentUser)}
+                    >
+                      Record Work
+                    </Button>
+                    {canMarkAsPaid(card) && (
+                      <Button
+                        size="sm"
+                        onClick={() => handleMarkWorkCardPaid(card)}
+                        disabled={markingWorkCardPaid}
+                      >
+                        <CheckCircle className="h-4 w-4 mr-1" />
+                        Mark Paid
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          )}
+        </div>
+      )}
+
+      {/* Assigned Work Plans from Admin (legacy workLogs) */}
       {user && assignedPlans.length > 0 && (
         <div className="space-y-3">
           <div>
@@ -1586,6 +1844,217 @@ export default function ManagerOperationsPage() {
         </DialogContent>
       </Dialog>
 
+      {/* View Work Card (read-only) */}
+      <Dialog open={workCardViewOpen} onOpenChange={setWorkCardViewOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Work Card Details</DialogTitle>
+            <DialogDescription>Read-only view of the work card</DialogDescription>
+          </DialogHeader>
+          {selectedWorkCard && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-lg text-foreground">
+                  {selectedWorkCard.workTitle || selectedWorkCard.workCategory}
+                </h3>
+                <Badge variant="outline" className="capitalize">{selectedWorkCard.status}</Badge>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Stage</p>
+                  <p className="font-medium">{selectedWorkCard.stageName || selectedWorkCard.stageId}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Planned workers</p>
+                  <p className="font-medium">{selectedWorkCard.planned?.workers ?? '—'}</p>
+                </div>
+              </div>
+              <div className="p-3 bg-muted/30 rounded-lg">
+                <h4 className="font-semibold text-foreground mb-2">Planned (Admin)</h4>
+                {selectedWorkCard.planned?.inputs != null && String(selectedWorkCard.planned.inputs).trim() !== '' && <p className="text-sm text-muted-foreground">Inputs: {selectedWorkCard.planned.inputs}</p>}
+                {selectedWorkCard.planned?.fuel != null && String(selectedWorkCard.planned.fuel).trim() !== '' && <p className="text-sm text-muted-foreground">Fuel: {selectedWorkCard.planned.fuel}</p>}
+                {selectedWorkCard.planned?.chemicals != null && String(selectedWorkCard.planned.chemicals).trim() !== '' && <p className="text-sm text-muted-foreground">Chemicals: {selectedWorkCard.planned.chemicals}</p>}
+                {selectedWorkCard.planned?.fertilizer != null && String(selectedWorkCard.planned.fertilizer).trim() !== '' && <p className="text-sm text-muted-foreground">Fertilizer: {selectedWorkCard.planned.fertilizer}</p>}
+                {selectedWorkCard.planned?.estimatedCost != null && (
+                  <p className="text-sm font-medium mt-1">Est. cost: KES {Number(selectedWorkCard.planned.estimatedCost).toLocaleString()}</p>
+                )}
+              </div>
+              {selectedWorkCard.actual?.submitted && (
+                <div className="p-3 bg-muted/30 rounded-lg">
+                  <h4 className="font-semibold text-foreground mb-2">Actual (Your submission)</h4>
+                  <p className="text-sm">Workers: {selectedWorkCard.actual?.actualWorkers ?? '—'}</p>
+                  {selectedWorkCard.actual?.ratePerPerson != null && (
+                    <p className="text-sm">Price per person: KES {selectedWorkCard.actual.ratePerPerson.toLocaleString()}</p>
+                  )}
+                  {selectedWorkCard.actual?.actualWorkers != null && selectedWorkCard.actual?.ratePerPerson != null && selectedWorkCard.actual.actualWorkers > 0 && selectedWorkCard.actual.ratePerPerson > 0 && (
+                    <p className="text-sm font-medium mt-1">Total labour: KES {(selectedWorkCard.actual.actualWorkers * selectedWorkCard.actual.ratePerPerson).toLocaleString()}</p>
+                  )}
+                  {selectedWorkCard.actual?.actualInputsUsed != null && String(selectedWorkCard.actual.actualInputsUsed).trim() !== '' && <p className="text-sm">Inputs: {selectedWorkCard.actual.actualInputsUsed}</p>}
+                  {selectedWorkCard.actual?.actualFuelUsed != null && String(selectedWorkCard.actual.actualFuelUsed).trim() !== '' && <p className="text-sm">Fuel: {selectedWorkCard.actual.actualFuelUsed}</p>}
+                  {selectedWorkCard.actual?.actualChemicalsUsed != null && String(selectedWorkCard.actual.actualChemicalsUsed).trim() !== '' && <p className="text-sm">Chemicals: {selectedWorkCard.actual.actualChemicalsUsed}</p>}
+                  {selectedWorkCard.actual?.actualFertilizerUsed != null && String(selectedWorkCard.actual.actualFertilizerUsed).trim() !== '' && <p className="text-sm">Fertilizer: {selectedWorkCard.actual.actualFertilizerUsed}</p>}
+                  {selectedWorkCard.actual?.notes && (
+                    <p className="text-sm mt-1">Notes: {selectedWorkCard.actual.notes}</p>
+                  )}
+                  {selectedWorkCard.payment?.isPaid && (
+                    <p className="text-sm mt-2 text-green-600 font-medium">Paid — labour expense recorded.</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Record Work (Manager submits execution into existing card — never creates) */}
+      <Dialog open={workCardRecordOpen} onOpenChange={setWorkCardRecordOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Record Work</DialogTitle>
+            <DialogDescription>
+              Submit execution data for this work card. This updates the existing card; no new card is created.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedWorkCard && (
+            <div className="space-y-4">
+              <div className="p-3 bg-muted/30 rounded-lg">
+                <p className="font-medium text-foreground">{selectedWorkCard.workTitle || selectedWorkCard.workCategory}</p>
+                <p className="text-xs text-muted-foreground">Planned: {selectedWorkCard.planned?.workers ?? 0} workers</p>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Actual workers</label>
+                <input
+                  type="number"
+                  min={0}
+                  className="fv-input w-full"
+                  value={recordActualWorkers}
+                  onChange={(e) => setRecordActualWorkers(e.target.value)}
+                  placeholder="Number of workers"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Price per person (KES)</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  className="fv-input w-full"
+                  value={recordRatePerPerson}
+                  onChange={(e) => setRecordRatePerPerson(e.target.value)}
+                  placeholder="e.g. 500"
+                />
+              </div>
+              <div className="p-3 bg-muted/30 rounded-lg">
+                <div className="text-sm font-medium text-foreground">
+                  Total labour: KES {(Number(recordActualWorkers) || 0) * (Number(recordRatePerPerson) || 0) ? ((Number(recordActualWorkers) || 0) * (Number(recordRatePerPerson) || 0)).toLocaleString() : '0'}
+                </div>
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  {recordActualWorkers || '0'} × KES {(Number(recordRatePerPerson) || 0).toLocaleString()} (expense counted when marked as paid)
+                </div>
+              </div>
+              {selectedWorkCard.workCategory && (
+                recordModalResourceItems.length > 0 ? (
+                  <>
+                    <div>
+                      <label className="text-xs text-muted-foreground mb-1 block">
+                        {selectedWorkCard.workCategory === 'Fertilizer application' && 'Actual fertilizer used'}
+                        {selectedWorkCard.workCategory === 'Spraying' && 'Actual chemical used'}
+                        {selectedWorkCard.workCategory === 'Watering' && 'Actual fuel used'}
+                        {(selectedWorkCard.workCategory === 'Tying of crops' || selectedWorkCard.workCategory === 'Weeding') && 'Actual inputs used'}
+                        {!['Fertilizer application', 'Spraying', 'Watering', 'Tying of crops', 'Weeding'].includes(selectedWorkCard.workCategory) && 'Actual resource used'}
+                      </label>
+                      <Select value={recordResourceItemId || '__none__'} onValueChange={(v) => { setRecordResourceItemId(v === '__none__' ? '' : v); setRecordResourceQuantity(''); setRecordResourceQuantitySecondary(''); }}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select from inventory" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">None</SelectItem>
+                          {recordModalResourceItems.map((item) => (
+                            <SelectItem key={item.id} value={item.id}>{item.name} ({item.unit})</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {recordModalSelectedItem && (
+                      <>
+                        <div>
+                          <label className="text-xs text-muted-foreground mb-1 block">
+                            {recordModalSelectedItem.category === 'fertilizer' && 'Bags'}
+                            {(recordModalSelectedItem.category === 'fuel' || recordModalSelectedItem.category === 'diesel') && 'Containers'}
+                            {recordModalSelectedItem.category === 'chemical' && (recordModalSelectedItem.packagingType === 'box' ? 'Units (items used, e.g. 2 = 2 items from box)' : 'Units')}
+                            {(recordModalSelectedItem.category === 'ropes' || recordModalSelectedItem.category === 'sacks' || recordModalSelectedItem.category === 'materials') && `Amount (${recordModalSelectedItem.unit})`}
+                          </label>
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            className="fv-input w-full"
+                            value={recordResourceQuantity}
+                            onChange={(e) => setRecordResourceQuantity(e.target.value)}
+                            placeholder={recordModalSelectedItem.category === 'fertilizer' ? 'e.g. 2' : 'e.g. 1'}
+                          />
+                        </div>
+                        {(recordModalSelectedItem.category === 'fertilizer' || recordModalSelectedItem.category === 'fuel' || recordModalSelectedItem.category === 'diesel') && (
+                          <div>
+                            <label className="text-xs text-muted-foreground mb-1 block">
+                              {recordModalSelectedItem.category === 'fertilizer' ? 'Kgs (optional)' : 'Litres (optional)'}
+                            </label>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              className="fv-input w-full"
+                              value={recordResourceQuantitySecondary}
+                              onChange={(e) => setRecordResourceQuantitySecondary(e.target.value)}
+                              placeholder={recordModalSelectedItem.category === 'fertilizer' ? 'e.g. 50' : 'e.g. 20'}
+                            />
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Actual resource used (optional)</label>
+                    <input
+                      type="text"
+                      className="fv-input w-full"
+                      value={
+                        selectedWorkCard.workCategory === 'Fertilizer application' ? recordActualFertilizer :
+                        selectedWorkCard.workCategory === 'Spraying' ? recordActualChemicals :
+                        selectedWorkCard.workCategory === 'Watering' ? recordActualFuel : recordActualInputs
+                      }
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (selectedWorkCard.workCategory === 'Fertilizer application') setRecordActualFertilizer(v);
+                        else if (selectedWorkCard.workCategory === 'Spraying') setRecordActualChemicals(v);
+                        else if (selectedWorkCard.workCategory === 'Watering') setRecordActualFuel(v);
+                        else setRecordActualInputs(v);
+                      }}
+                      placeholder="e.g. 2 bags NPK, 50 kg"
+                    />
+                  </div>
+                )
+              )}
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Notes</label>
+                <textarea
+                  className="fv-input w-full min-h-[80px]"
+                  value={recordNotes}
+                  onChange={(e) => setRecordNotes(e.target.value)}
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setWorkCardRecordOpen(false)} disabled={submittingWorkCardRecord}>
+                  Cancel
+                </Button>
+                <Button onClick={handleSubmitWorkCardRecord} disabled={submittingWorkCardRecord}>
+                  {submittingWorkCardRecord ? 'Submitting...' : 'Submit execution'}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Log in Work: manager fills details for an assigned plan */}
       <Dialog open={fillOpen} onOpenChange={setFillOpen}>
         <DialogContent className="max-w-lg">
@@ -1835,7 +2304,7 @@ export default function ManagerOperationsPage() {
                             {(usage.category === 'chemical' || usage.category === 'materials') && (
                               <>
                                 <label className="text-[11px] text-muted-foreground">
-                                  {selectedItem?.packagingType === 'box' ? 'Boxes' : 'Units'}
+                                  {selectedItem?.packagingType === 'box' ? 'Units (items)' : 'Units'}
                                 </label>
                                 <input
                                   type="text"
@@ -2254,7 +2723,7 @@ export default function ManagerOperationsPage() {
                                 <>
                                   <label className="text-[11px] text-muted-foreground">
                                     {selectedItem?.packagingType === 'box'
-                                      ? 'Boxes'
+                                      ? 'Units (items)'
                                       : 'Units'}
                                   </label>
                                   <input
@@ -2409,7 +2878,7 @@ export default function ManagerOperationsPage() {
               {drawerType === 'total' && `Showing all ${stats.totalLogs} work logs`}
               {drawerType === 'paid' && `Showing ${stats.paidLogs} paid work logs`}
               {drawerType === 'unpaid' && `Showing ${stats.unpaidLogs} unpaid work logs`}
-              {drawerType === 'amount' && `Total amount: ${formatCurrency(stats.totalAmount)}`}
+              {drawerType === 'amount' && `Total labour: ${formatCurrency(stats.totalLabour)}`}
             </DrawerDescription>
           </DrawerHeader>
           <div className="px-4 pb-4 overflow-y-auto">

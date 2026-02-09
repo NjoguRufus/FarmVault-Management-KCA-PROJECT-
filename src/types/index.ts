@@ -126,6 +126,9 @@ export interface Expense {
   syncedFromWorkLogId?: string;
   synced?: boolean;
 
+  /** When expense was created from a work card (mark as paid) */
+  workCardId?: string;
+
   // Payment / reconciliation
   paid?: boolean;
   paidAt?: Date;
@@ -307,8 +310,11 @@ export interface InventoryUsage {
   quantity: number;
   unit: string;
 
-  source: 'workLog' | 'manual-adjustment';
+  source: 'workLog' | 'manual-adjustment' | 'workCard';
   workLogId?: string;
+  workCardId?: string;
+  /** Manager assigned (when source is workCard). */
+  managerName?: string;
 
   stageIndex?: number;
   stageName?: string;
@@ -521,4 +527,78 @@ export interface CodeRedMessage {
   fromRole: string;   // 'developer' | 'company-admin' etc.
   body: string;
   createdAt: Date;
+}
+
+// --- Operations Work Cards (Admin creates, Manager submits execution only) ---
+
+export type WorkCardStatus = 'planned' | 'submitted' | 'approved' | 'rejected' | 'paid';
+
+export interface WorkCardPlanned {
+  date: Date | unknown;
+  workers: number;
+  inputs?: string;
+  fuel?: string;
+  chemicals?: string;
+  fertilizer?: string;
+  estimatedCost?: number;
+}
+
+export interface WorkCardActual {
+  submitted: boolean;
+  managerId?: string;
+  managerName?: string;
+  actualDate?: Date | unknown;
+  actualWorkers?: number;
+  /** Price per person (KES). Total labour = actualWorkers * ratePerPerson; expense created when marked as paid. */
+  ratePerPerson?: number;
+  actualInputsUsed?: string;
+  actualFuelUsed?: string;
+  actualChemicalsUsed?: string;
+  actualFertilizerUsed?: string;
+  notes?: string;
+  /** For inventory deduction on approve: item and quantities used (one resource per card) */
+  actualResourceItemId?: string;
+  actualResourceQuantity?: number;
+  actualResourceQuantitySecondary?: number;
+  submittedAt?: Date | unknown;
+  /** Optional: version history entries for resubmissions */
+  actualHistory?: Array<{
+    actualWorkers?: number;
+    actualInputsUsed?: string;
+    actualFuelUsed?: string;
+    actualChemicalsUsed?: string;
+    actualFertilizerUsed?: string;
+    notes?: string;
+    submittedAt: Date | unknown;
+  }>;
+}
+
+export interface WorkCardPayment {
+  isPaid: boolean;
+  paidAt?: Date | unknown;
+  paidBy?: string;
+}
+
+export interface OperationsWorkCard {
+  id: string;
+  companyId: string;
+  projectId: string;
+  stageId: string;
+  stageName?: string;
+  workTitle: string;
+  workCategory: string;
+
+  planned: WorkCardPlanned;
+  actual: WorkCardActual;
+  payment: WorkCardPayment;
+  status: WorkCardStatus;
+
+  allocatedManagerId: string | null;
+  createdByAdminId: string;
+  createdAt: Date | unknown;
+  /** Set when status = approved */
+  approvedBy?: string;
+  approvedAt?: Date | unknown;
+  /** Set when status = rejected */
+  rejectionReason?: string;
 }
