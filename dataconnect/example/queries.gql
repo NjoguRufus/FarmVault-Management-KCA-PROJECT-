@@ -1,0 +1,39 @@
+mutation CreateNewPlantingPlan($cropId: UUID!, $userId: UUID!, $expectedYield: Float!, $plannedDate: Date!, $unit: String!, $actualPlantDate: Date, $notes: String, $status: String) @auth(level: USER) {
+  plantingPlan_insert(data: {
+    cropId: $cropId,
+    userId: $userId,
+    expectedYield: $expectedYield,
+    plannedDate: $plannedDate,
+    unit: $unit,
+    actualPlantDate: $actualPlantDate,
+    notes: $notes,
+    status: $status
+  })
+}
+
+query GetHarvestsForUser($userId: UUID!) @auth(level: USER) {
+  harvests(where: {userId: {eq: $userId}}) {
+    id
+    crop {
+      name
+    }
+    harvestDate
+    quantity
+    unit
+  }
+}
+
+mutation UpdateInventoryQuantity($id: UUID!, $quantity: Float!) @auth(level: USER) {
+  inventory_update(id: $id, data: {quantity: $quantity, lastUpdated_expr: "request.time"}) {
+    id
+  }
+}
+
+query ListCrops @auth(level: PUBLIC, insecureReason: "This operation is safe to expose to the public") {
+  crops {
+    id
+    name
+    description
+    harvestSeason
+  }
+}

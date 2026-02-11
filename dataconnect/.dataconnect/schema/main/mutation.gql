@@ -1,0 +1,562 @@
+extend type Mutation {
+  """
+  ✨ Insert a single `Crop` into the table and return its key. Columns not specified in `data` will receive defaults (e.g. `null`).
+  """
+  crop_insert(
+    """
+    Data object to insert into the table.
+    """
+    data: Crop_Data!
+  ): Crop_KeyOutput! @fdc_generated(from: "Crop", purpose: INSERT_SINGLE)
+  """
+  ✨ Insert a single `Harvest` into the table and return its key. Columns not specified in `data` will receive defaults (e.g. `null`).
+  """
+  harvest_insert(
+    """
+    Data object to insert into the table.
+    """
+    data: Harvest_Data!
+  ): Harvest_KeyOutput! @fdc_generated(from: "Harvest", purpose: INSERT_SINGLE)
+  """
+  ✨ Insert a single `Inventory` into the table and return its key. Columns not specified in `data` will receive defaults (e.g. `null`).
+  """
+  inventory_insert(
+    """
+    Data object to insert into the table.
+    """
+    data: Inventory_Data!
+  ): Inventory_KeyOutput! @fdc_generated(from: "Inventory", purpose: INSERT_SINGLE)
+  """
+  ✨ Insert a single `PlantingPlan` into the table and return its key. Columns not specified in `data` will receive defaults (e.g. `null`).
+  """
+  plantingPlan_insert(
+    """
+    Data object to insert into the table.
+    """
+    data: PlantingPlan_Data!
+  ): PlantingPlan_KeyOutput! @fdc_generated(from: "PlantingPlan", purpose: INSERT_SINGLE)
+  """
+  ✨ Insert a single `User` into the table and return its key. Columns not specified in `data` will receive defaults (e.g. `null`).
+  """
+  user_insert(
+    """
+    Data object to insert into the table.
+    """
+    data: User_Data!
+  ): User_KeyOutput! @fdc_generated(from: "User", purpose: INSERT_SINGLE)
+  """
+  ✨ Insert `Crop` objects into the table and return their keys. Columns not specified in `data` will receive defaults (e.g. `null`).
+  """
+  crop_insertMany(
+    """
+    List of data objects to insert into the table.
+    """
+    data: [Crop_Data!]!
+  ): [Crop_KeyOutput!]! @fdc_generated(from: "Crop", purpose: INSERT_MULTIPLE)
+  """
+  ✨ Insert `Harvest` objects into the table and return their keys. Columns not specified in `data` will receive defaults (e.g. `null`).
+  """
+  harvest_insertMany(
+    """
+    List of data objects to insert into the table.
+    """
+    data: [Harvest_Data!]!
+  ): [Harvest_KeyOutput!]! @fdc_generated(from: "Harvest", purpose: INSERT_MULTIPLE)
+  """
+  ✨ Insert `Inventory` objects into the table and return their keys. Columns not specified in `data` will receive defaults (e.g. `null`).
+  """
+  inventory_insertMany(
+    """
+    List of data objects to insert into the table.
+    """
+    data: [Inventory_Data!]!
+  ): [Inventory_KeyOutput!]! @fdc_generated(from: "Inventory", purpose: INSERT_MULTIPLE)
+  """
+  ✨ Insert `PlantingPlan` objects into the table and return their keys. Columns not specified in `data` will receive defaults (e.g. `null`).
+  """
+  plantingPlan_insertMany(
+    """
+    List of data objects to insert into the table.
+    """
+    data: [PlantingPlan_Data!]!
+  ): [PlantingPlan_KeyOutput!]! @fdc_generated(from: "PlantingPlan", purpose: INSERT_MULTIPLE)
+  """
+  ✨ Insert `User` objects into the table and return their keys. Columns not specified in `data` will receive defaults (e.g. `null`).
+  """
+  user_insertMany(
+    """
+    List of data objects to insert into the table.
+    """
+    data: [User_Data!]!
+  ): [User_KeyOutput!]! @fdc_generated(from: "User", purpose: INSERT_MULTIPLE)
+  """
+  ✨ Insert or update a single `Crop` into the table, based on the primary key. Returns the key of the newly inserted or existing updated `Crop`.
+  """
+  crop_upsert(
+    """
+    Data object to insert or update if it already exists.
+    """
+    data: Crop_Data!
+  ): Crop_KeyOutput! @fdc_generated(from: "Crop", purpose: UPSERT_SINGLE)
+  """
+  ✨ Insert or update a single `Harvest` into the table, based on the primary key. Returns the key of the newly inserted or existing updated `Harvest`.
+  """
+  harvest_upsert(
+    """
+    Data object to insert or update if it already exists.
+    """
+    data: Harvest_Data!
+  ): Harvest_KeyOutput! @fdc_generated(from: "Harvest", purpose: UPSERT_SINGLE)
+  """
+  ✨ Insert or update a single `Inventory` into the table, based on the primary key. Returns the key of the newly inserted or existing updated `Inventory`.
+  """
+  inventory_upsert(
+    """
+    Data object to insert or update if it already exists.
+    """
+    data: Inventory_Data!
+  ): Inventory_KeyOutput! @fdc_generated(from: "Inventory", purpose: UPSERT_SINGLE)
+  """
+  ✨ Insert or update a single `PlantingPlan` into the table, based on the primary key. Returns the key of the newly inserted or existing updated `PlantingPlan`.
+  """
+  plantingPlan_upsert(
+    """
+    Data object to insert or update if it already exists.
+    """
+    data: PlantingPlan_Data!
+  ): PlantingPlan_KeyOutput! @fdc_generated(from: "PlantingPlan", purpose: UPSERT_SINGLE)
+  """
+  ✨ Insert or update a single `User` into the table, based on the primary key. Returns the key of the newly inserted or existing updated `User`.
+  """
+  user_upsert(
+    """
+    Data object to insert or update if it already exists.
+    """
+    data: User_Data!
+  ): User_KeyOutput! @fdc_generated(from: "User", purpose: UPSERT_SINGLE)
+  """
+  ✨ Insert or update `Crop` objects into the table, based on the primary key. Returns the key of the newly inserted or existing updated `Crop`.
+  """
+  crop_upsertMany(
+    """
+    List of data objects to insert or update if it already exists.
+    """
+    data: [Crop_Data!]!
+  ): [Crop_KeyOutput!]! @fdc_generated(from: "Crop", purpose: UPSERT_MULTIPLE)
+  """
+  ✨ Insert or update `Harvest` objects into the table, based on the primary key. Returns the key of the newly inserted or existing updated `Harvest`.
+  """
+  harvest_upsertMany(
+    """
+    List of data objects to insert or update if it already exists.
+    """
+    data: [Harvest_Data!]!
+  ): [Harvest_KeyOutput!]! @fdc_generated(from: "Harvest", purpose: UPSERT_MULTIPLE)
+  """
+  ✨ Insert or update `Inventory` objects into the table, based on the primary key. Returns the key of the newly inserted or existing updated `Inventory`.
+  """
+  inventory_upsertMany(
+    """
+    List of data objects to insert or update if it already exists.
+    """
+    data: [Inventory_Data!]!
+  ): [Inventory_KeyOutput!]! @fdc_generated(from: "Inventory", purpose: UPSERT_MULTIPLE)
+  """
+  ✨ Insert or update `PlantingPlan` objects into the table, based on the primary key. Returns the key of the newly inserted or existing updated `PlantingPlan`.
+  """
+  plantingPlan_upsertMany(
+    """
+    List of data objects to insert or update if it already exists.
+    """
+    data: [PlantingPlan_Data!]!
+  ): [PlantingPlan_KeyOutput!]! @fdc_generated(from: "PlantingPlan", purpose: UPSERT_MULTIPLE)
+  """
+  ✨ Insert or update `User` objects into the table, based on the primary key. Returns the key of the newly inserted or existing updated `User`.
+  """
+  user_upsertMany(
+    """
+    List of data objects to insert or update if it already exists.
+    """
+    data: [User_Data!]!
+  ): [User_KeyOutput!]! @fdc_generated(from: "User", purpose: UPSERT_MULTIPLE)
+  """
+  ✨ Update a single `Crop` based on `id`, `key` or `first`, setting columns specified in `data`. Returns the key of the updated `Crop` or `null` if not found.
+  """
+  crop_update(
+    """
+    The unique ID of the object.
+    """
+    id: UUID
+
+    """
+    The key used to identify the object.
+    """
+    key: Crop_Key
+
+    """
+    Fetch the first row based on the filters and ordering.
+    """
+    first: Crop_FirstRow
+
+    """
+    Data object containing fields to be updated.
+    """
+    data: Crop_Data!
+  ): Crop_KeyOutput @fdc_generated(from: "Crop", purpose: UPDATE_SINGLE)
+  """
+  ✨ Update a single `Harvest` based on `id`, `key` or `first`, setting columns specified in `data`. Returns the key of the updated `Harvest` or `null` if not found.
+  """
+  harvest_update(
+    """
+    The unique ID of the object.
+    """
+    id: UUID
+
+    """
+    The key used to identify the object.
+    """
+    key: Harvest_Key
+
+    """
+    Fetch the first row based on the filters and ordering.
+    """
+    first: Harvest_FirstRow
+
+    """
+    Data object containing fields to be updated.
+    """
+    data: Harvest_Data!
+  ): Harvest_KeyOutput @fdc_generated(from: "Harvest", purpose: UPDATE_SINGLE)
+  """
+  ✨ Update a single `Inventory` based on `id`, `key` or `first`, setting columns specified in `data`. Returns the key of the updated `Inventory` or `null` if not found.
+  """
+  inventory_update(
+    """
+    The unique ID of the object.
+    """
+    id: UUID
+
+    """
+    The key used to identify the object.
+    """
+    key: Inventory_Key
+
+    """
+    Fetch the first row based on the filters and ordering.
+    """
+    first: Inventory_FirstRow
+
+    """
+    Data object containing fields to be updated.
+    """
+    data: Inventory_Data!
+  ): Inventory_KeyOutput @fdc_generated(from: "Inventory", purpose: UPDATE_SINGLE)
+  """
+  ✨ Update a single `PlantingPlan` based on `id`, `key` or `first`, setting columns specified in `data`. Returns the key of the updated `PlantingPlan` or `null` if not found.
+  """
+  plantingPlan_update(
+    """
+    The unique ID of the object.
+    """
+    id: UUID
+
+    """
+    The key used to identify the object.
+    """
+    key: PlantingPlan_Key
+
+    """
+    Fetch the first row based on the filters and ordering.
+    """
+    first: PlantingPlan_FirstRow
+
+    """
+    Data object containing fields to be updated.
+    """
+    data: PlantingPlan_Data!
+  ): PlantingPlan_KeyOutput @fdc_generated(from: "PlantingPlan", purpose: UPDATE_SINGLE)
+  """
+  ✨ Update a single `User` based on `id`, `key` or `first`, setting columns specified in `data`. Returns the key of the updated `User` or `null` if not found.
+  """
+  user_update(
+    """
+    The unique ID of the object.
+    """
+    id: UUID
+
+    """
+    The key used to identify the object.
+    """
+    key: User_Key
+
+    """
+    Fetch the first row based on the filters and ordering.
+    """
+    first: User_FirstRow
+
+    """
+    Data object containing fields to be updated.
+    """
+    data: User_Data!
+  ): User_KeyOutput @fdc_generated(from: "User", purpose: UPDATE_SINGLE)
+  """
+  ✨ Update `Crop` objects matching `where` conditions (or `all`, if true) according to `data`. Returns the number of rows updated.
+  """
+  crop_updateMany(
+    """
+    Filter condition to specify which rows to update.
+    """
+    where: Crop_Filter
+
+    """
+    Set to true to update all rows.
+    """
+    all: Boolean = false
+
+    """
+    Data object containing fields to update.
+    """
+    data: Crop_Data!
+  ): Int! @fdc_generated(from: "Crop", purpose: UPDATE_MULTIPLE)
+  """
+  ✨ Update `Harvest` objects matching `where` conditions (or `all`, if true) according to `data`. Returns the number of rows updated.
+  """
+  harvest_updateMany(
+    """
+    Filter condition to specify which rows to update.
+    """
+    where: Harvest_Filter
+
+    """
+    Set to true to update all rows.
+    """
+    all: Boolean = false
+
+    """
+    Data object containing fields to update.
+    """
+    data: Harvest_Data!
+  ): Int! @fdc_generated(from: "Harvest", purpose: UPDATE_MULTIPLE)
+  """
+  ✨ Update `Inventory` objects matching `where` conditions (or `all`, if true) according to `data`. Returns the number of rows updated.
+  """
+  inventory_updateMany(
+    """
+    Filter condition to specify which rows to update.
+    """
+    where: Inventory_Filter
+
+    """
+    Set to true to update all rows.
+    """
+    all: Boolean = false
+
+    """
+    Data object containing fields to update.
+    """
+    data: Inventory_Data!
+  ): Int! @fdc_generated(from: "Inventory", purpose: UPDATE_MULTIPLE)
+  """
+  ✨ Update `PlantingPlan` objects matching `where` conditions (or `all`, if true) according to `data`. Returns the number of rows updated.
+  """
+  plantingPlan_updateMany(
+    """
+    Filter condition to specify which rows to update.
+    """
+    where: PlantingPlan_Filter
+
+    """
+    Set to true to update all rows.
+    """
+    all: Boolean = false
+
+    """
+    Data object containing fields to update.
+    """
+    data: PlantingPlan_Data!
+  ): Int! @fdc_generated(from: "PlantingPlan", purpose: UPDATE_MULTIPLE)
+  """
+  ✨ Update `User` objects matching `where` conditions (or `all`, if true) according to `data`. Returns the number of rows updated.
+  """
+  user_updateMany(
+    """
+    Filter condition to specify which rows to update.
+    """
+    where: User_Filter
+
+    """
+    Set to true to update all rows.
+    """
+    all: Boolean = false
+
+    """
+    Data object containing fields to update.
+    """
+    data: User_Data!
+  ): Int! @fdc_generated(from: "User", purpose: UPDATE_MULTIPLE)
+  """
+  ✨ Delete a single `Crop` based on `id`, `key` or `first` and return its key (or `null` if not found).
+  """
+  crop_delete(
+    """
+    The unique ID of the object.
+    """
+    id: UUID
+
+    """
+    The key used to identify the object.
+    """
+    key: Crop_Key
+
+    """
+    Fetch the first row based on the filters and ordering.
+    """
+    first: Crop_FirstRow
+  ): Crop_KeyOutput @fdc_generated(from: "Crop", purpose: DELETE_SINGLE)
+  """
+  ✨ Delete a single `Harvest` based on `id`, `key` or `first` and return its key (or `null` if not found).
+  """
+  harvest_delete(
+    """
+    The unique ID of the object.
+    """
+    id: UUID
+
+    """
+    The key used to identify the object.
+    """
+    key: Harvest_Key
+
+    """
+    Fetch the first row based on the filters and ordering.
+    """
+    first: Harvest_FirstRow
+  ): Harvest_KeyOutput @fdc_generated(from: "Harvest", purpose: DELETE_SINGLE)
+  """
+  ✨ Delete a single `Inventory` based on `id`, `key` or `first` and return its key (or `null` if not found).
+  """
+  inventory_delete(
+    """
+    The unique ID of the object.
+    """
+    id: UUID
+
+    """
+    The key used to identify the object.
+    """
+    key: Inventory_Key
+
+    """
+    Fetch the first row based on the filters and ordering.
+    """
+    first: Inventory_FirstRow
+  ): Inventory_KeyOutput @fdc_generated(from: "Inventory", purpose: DELETE_SINGLE)
+  """
+  ✨ Delete a single `PlantingPlan` based on `id`, `key` or `first` and return its key (or `null` if not found).
+  """
+  plantingPlan_delete(
+    """
+    The unique ID of the object.
+    """
+    id: UUID
+
+    """
+    The key used to identify the object.
+    """
+    key: PlantingPlan_Key
+
+    """
+    Fetch the first row based on the filters and ordering.
+    """
+    first: PlantingPlan_FirstRow
+  ): PlantingPlan_KeyOutput @fdc_generated(from: "PlantingPlan", purpose: DELETE_SINGLE)
+  """
+  ✨ Delete a single `User` based on `id`, `key` or `first` and return its key (or `null` if not found).
+  """
+  user_delete(
+    """
+    The unique ID of the object.
+    """
+    id: UUID
+
+    """
+    The key used to identify the object.
+    """
+    key: User_Key
+
+    """
+    Fetch the first row based on the filters and ordering.
+    """
+    first: User_FirstRow
+  ): User_KeyOutput @fdc_generated(from: "User", purpose: DELETE_SINGLE)
+  """
+  ✨ Delete `Crop` objects matching `where` conditions (or `all`, if true). Returns the number of rows deleted.
+  """
+  crop_deleteMany(
+    """
+    Filter condition to specify which rows to delete.
+    """
+    where: Crop_Filter
+
+    """
+    Set to true to delete all rows.
+    """
+    all: Boolean = false
+  ): Int! @fdc_generated(from: "Crop", purpose: DELETE_MULTIPLE)
+  """
+  ✨ Delete `Harvest` objects matching `where` conditions (or `all`, if true). Returns the number of rows deleted.
+  """
+  harvest_deleteMany(
+    """
+    Filter condition to specify which rows to delete.
+    """
+    where: Harvest_Filter
+
+    """
+    Set to true to delete all rows.
+    """
+    all: Boolean = false
+  ): Int! @fdc_generated(from: "Harvest", purpose: DELETE_MULTIPLE)
+  """
+  ✨ Delete `Inventory` objects matching `where` conditions (or `all`, if true). Returns the number of rows deleted.
+  """
+  inventory_deleteMany(
+    """
+    Filter condition to specify which rows to delete.
+    """
+    where: Inventory_Filter
+
+    """
+    Set to true to delete all rows.
+    """
+    all: Boolean = false
+  ): Int! @fdc_generated(from: "Inventory", purpose: DELETE_MULTIPLE)
+  """
+  ✨ Delete `PlantingPlan` objects matching `where` conditions (or `all`, if true). Returns the number of rows deleted.
+  """
+  plantingPlan_deleteMany(
+    """
+    Filter condition to specify which rows to delete.
+    """
+    where: PlantingPlan_Filter
+
+    """
+    Set to true to delete all rows.
+    """
+    all: Boolean = false
+  ): Int! @fdc_generated(from: "PlantingPlan", purpose: DELETE_MULTIPLE)
+  """
+  ✨ Delete `User` objects matching `where` conditions (or `all`, if true). Returns the number of rows deleted.
+  """
+  user_deleteMany(
+    """
+    Filter condition to specify which rows to delete.
+    """
+    where: User_Filter
+
+    """
+    Set to true to delete all rows.
+    """
+    all: Boolean = false
+  ): Int! @fdc_generated(from: "User", purpose: DELETE_MULTIPLE)
+}

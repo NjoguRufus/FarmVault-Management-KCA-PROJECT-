@@ -1,5 +1,6 @@
 import {
   db,
+  auth,
 } from '@/lib/firebase';
 import {
   collection,
@@ -12,6 +13,7 @@ import {
   getDocs,
   query,
   where,
+  runTransaction,
 } from 'firebase/firestore';
 import type { HarvestCollectionStatus } from '@/types';
 
@@ -295,24 +297,246 @@ export async function registerHarvestCash(params: {
   });
 }
 
-/** Apply a picker payout from the harvest cash wallet; validates remaining balance. */
-export async function applyHarvestCashPayment(collectionId: string, amount: number): Promise<void> {
+/**
+ * Internal helper: mirror a wallet deduction into the per-collection cash pool
+ * so that UI balances (cashReceived, totalPaidOut, remainingBalance) stay in sync.
+ */
+async function mirrorWalletDeductionToCashPool(collectionId: string, amount: number): Promise<void> {
   if (amount <= 0) return;
+
   const snap = await getDocs(
     query(collection(db, CASH_POOLS), where('collectionId', '==', collectionId))
   );
-  if (snap.empty) {
-    throw new Error('No harvest cash recorded for this collection. Register cash first.');
-  }
+  if (snap.empty) return;
+
   const docSnap = snap.docs[0];
   const data = docSnap.data() as any;
-  const remaining = Number(data.remainingBalance ?? 0);
-  const totalPaidOut = Number(data.totalPaidOut ?? 0);
-  if (remaining < amount) {
-    throw new Error('Not enough cash in Harvest Cash Wallet to pay this picker.');
-  }
+  const cashReceived = Number(data.cashReceived ?? 0);
+  const prevPaidOut = Number(data.totalPaidOut ?? 0);
+  const newPaidOut = prevPaidOut + amount;
+  const remainingBalance = Math.max(0, cashReceived - newPaidOut);
+
   await updateDoc(docSnap.ref, {
-    remainingBalance: remaining - amount,
-    totalPaidOut: totalPaidOut + amount,
+    totalPaidOut: newPaidOut,
+    remainingBalance,
+  });
+}
+
+/** Apply a picker payout from the single master harvest wallet (per project/crop). */
+export async function applyHarvestCashPayment(params: {
+  companyId: string;
+  projectId: string;
+  cropType: string;
+  collectionId: string;
+  amount: number;
+}): Promise<void> {
+  const { companyId, projectId, cropType, collectionId, amount } = params;
+  if (amount <= 0) return;
+
+  const walletId = `${companyId}_${projectId}_${cropType}`;
+  const walletRef = doc(db, 'harvestWallets', walletId);
+  const usageRef = doc(db, 'collectionCashUsage', `${walletId}_${collectionId}`);
+
+  await runTransaction(db, async (tx) => {
+    // 1) Read wallet and usage before any writes (required by Firestore)
+    const walletSnap = await tx.get(walletRef);
+    if (!walletSnap.exists()) {
+      throw new Error('No harvest wallet found for this project/crop. Add cash first.');
+    }
+    const wallet = walletSnap.data() as any;
+    const currentBalance = wallet.currentBalance ?? 0;
+    const cashPaidOutTotal = wallet.cashPaidOutTotal ?? 0;
+    if (currentBalance < amount) {
+      throw new Error('Not enough cash in Harvest Wallet.');
+    }
+
+    const usageSnap = await tx.get(usageRef);
+
+    // 2) Writes
+    tx.update(walletRef, {
+      currentBalance: currentBalance - amount,
+      cashPaidOutTotal: cashPaidOutTotal + amount,
+      lastUpdatedAt: new Date(),
+    });
+
+    if (!usageSnap.exists()) {
+      tx.set(usageRef, {
+        companyId,
+        projectId,
+        cropType,
+        walletId,
+        collectionId,
+        totalDeducted: amount,
+        lastUpdatedAt: new Date(),
+      });
+    } else {
+      const usage = usageSnap.data() as any;
+      const totalDeducted = (usage.totalDeducted ?? 0) + amount;
+      tx.update(usageRef, {
+        totalDeducted,
+        lastUpdatedAt: new Date(),
+      });
+    }
+  });
+
+  // Also reflect this deduction in the collection's cash pool (if any)
+  await mirrorWalletDeductionToCashPool(collectionId, amount);
+}
+
+export async function payPickersFromWalletBatchFirestore(params: {
+  companyId: string;
+  projectId: string;
+  cropType: string;
+  collectionId: string;
+  pickerIds: string[];
+}): Promise<void> {
+  const { companyId, projectId, cropType, collectionId, pickerIds } = params;
+  if (!pickerIds.length) return;
+
+  const walletId = `${companyId}_${projectId}_${cropType}`;
+  const walletRef = doc(db, 'harvestWallets', walletId);
+  const usageRef = doc(db, 'collectionCashUsage', `${walletId}_${collectionId}`);
+
+  // Track total amount deducted inside the transaction so we can mirror it
+  // into the collection cash pool afterwards.
+  let totalAmountForCashPool = 0;
+
+  await runTransaction(db, async (tx) => {
+    // 1) Read wallet, pickers, and usage before any writes
+    const walletSnap = await tx.get(walletRef);
+    if (!walletSnap.exists()) {
+      throw new Error('No harvest wallet found for this project/crop. Add cash first.');
+    }
+    const wallet = walletSnap.data() as any;
+    let currentBalance = wallet.currentBalance ?? 0;
+    let cashPaidOutTotal = wallet.cashPaidOutTotal ?? 0;
+
+    // Load pickers
+    const pickerRefs = pickerIds.map((id) => doc(db, 'harvestPickers', id));
+    const pickerSnaps = await Promise.all(pickerRefs.map((r) => tx.get(r)));
+    const toPay: { ref: any; amount: number }[] = [];
+    for (const snap of pickerSnaps) {
+      if (!snap.exists()) continue;
+      const p = snap.data() as any;
+      if (p.isPaid) continue;
+      const amount = p.totalPay ?? 0;
+      if (amount > 0) {
+        toPay.push({ ref: snap.ref, amount });
+      }
+    }
+    if (!toPay.length) {
+      throw new Error('All selected pickers are already paid or zero.');
+    }
+
+    const totalAmount = toPay.reduce((s, p) => s + p.amount, 0);
+    if (currentBalance < totalAmount) {
+      throw new Error('Not enough cash in Harvest Wallet.');
+    }
+
+    // Remember total amount so we can update the collection cash pool later
+    totalAmountForCashPool = totalAmount;
+
+    const usageSnap = await tx.get(usageRef);
+
+    // 2) Writes
+    // Update wallet
+    currentBalance -= totalAmount;
+    cashPaidOutTotal += totalAmount;
+    tx.update(walletRef, {
+      currentBalance,
+      cashPaidOutTotal,
+      lastUpdatedAt: new Date(),
+    });
+
+    // Update collection usage
+    if (!usageSnap.exists()) {
+      tx.set(usageRef, {
+        companyId,
+        projectId,
+        cropType,
+        walletId,
+        collectionId,
+        totalDeducted: totalAmount,
+        lastUpdatedAt: new Date(),
+      });
+    } else {
+      const usage = usageSnap.data() as any;
+      const totalDeducted = (usage.totalDeducted ?? 0) + totalAmount;
+      tx.update(usageRef, {
+        totalDeducted,
+        lastUpdatedAt: new Date(),
+      });
+    }
+
+    // Mark pickers paid
+    toPay.forEach(({ ref }) => {
+      tx.update(ref, {
+        isPaid: true,
+        paidAt: new Date(),
+      });
+    });
+  });
+
+  // Also reflect this deduction in the collection's cash pool (if any)
+  if (totalAmountForCashPool > 0) {
+    await mirrorWalletDeductionToCashPool(collectionId, totalAmountForCashPool);
+  }
+}
+
+/** Get the shared harvest wallet for a project/crop (used for balance display across all collections). */
+export async function getHarvestWallet(params: {
+  companyId: string;
+  projectId: string;
+  cropType: string;
+}): Promise<{ id: string; currentBalance: number; cashPaidOutTotal: number; cashReceivedTotal: number } | null> {
+  const walletId = `${params.companyId}_${params.projectId}_${params.cropType}`;
+  const snap = await getDoc(doc(db, 'harvestWallets', walletId));
+  if (!snap.exists()) return null;
+  const d = snap.data() as any;
+  return {
+    id: snap.id,
+    currentBalance: Number(d.currentBalance ?? 0),
+    cashPaidOutTotal: Number(d.cashPaidOutTotal ?? 0),
+    cashReceivedTotal: Number(d.cashReceivedTotal ?? 0),
+  };
+}
+
+/** Top up (or create) the master harvest wallet for a project/crop. */
+export async function topUpHarvestWallet(params: {
+  companyId: string;
+  projectId: string;
+  cropType: string;
+  amount: number;
+}): Promise<void> {
+  const { companyId, projectId, cropType, amount } = params;
+  if (amount <= 0) {
+    throw new Error('Top up amount must be greater than 0.');
+  }
+
+  const walletId = `${companyId}_${projectId}_${cropType}`;
+  const walletRef = doc(db, 'harvestWallets', walletId);
+
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(walletRef);
+    if (!snap.exists()) {
+      tx.set(walletRef, {
+        companyId,
+        projectId,
+        cropType,
+        cashReceivedTotal: amount,
+        cashPaidOutTotal: 0,
+        currentBalance: amount,
+        lastUpdatedAt: new Date(),
+      });
+    } else {
+      const w = snap.data() as any;
+      const cashReceivedTotal = (w.cashReceivedTotal ?? 0) + amount;
+      const currentBalance = (w.currentBalance ?? 0) + amount;
+      tx.update(walletRef, {
+        cashReceivedTotal,
+        currentBalance,
+        lastUpdatedAt: new Date(),
+      });
+    }
   });
 }

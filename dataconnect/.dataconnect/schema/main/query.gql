@@ -1,0 +1,267 @@
+extend type Query {
+  """
+  ✨ Look up a single `Crop` based on `id`, `key` or `first` and return selected fields (or `null` if not found).
+  """
+  crop(
+    """
+    The unique ID of the object.
+    """
+    id: UUID
+
+    """
+    The key used to identify the object.
+    """
+    key: Crop_Key
+
+    """
+    Fetch the first row based on the filters and ordering.
+    """
+    first: Crop_FirstRow
+  ): Crop @fdc_generated(from: "Crop", purpose: QUERY_SINGLE)
+  """
+  ✨ Look up a single `Harvest` based on `id`, `key` or `first` and return selected fields (or `null` if not found).
+  """
+  harvest(
+    """
+    The unique ID of the object.
+    """
+    id: UUID
+
+    """
+    The key used to identify the object.
+    """
+    key: Harvest_Key
+
+    """
+    Fetch the first row based on the filters and ordering.
+    """
+    first: Harvest_FirstRow
+  ): Harvest @fdc_generated(from: "Harvest", purpose: QUERY_SINGLE)
+  """
+  ✨ Look up a single `Inventory` based on `id`, `key` or `first` and return selected fields (or `null` if not found).
+  """
+  inventory(
+    """
+    The unique ID of the object.
+    """
+    id: UUID
+
+    """
+    The key used to identify the object.
+    """
+    key: Inventory_Key
+
+    """
+    Fetch the first row based on the filters and ordering.
+    """
+    first: Inventory_FirstRow
+  ): Inventory @fdc_generated(from: "Inventory", purpose: QUERY_SINGLE)
+  """
+  ✨ Look up a single `PlantingPlan` based on `id`, `key` or `first` and return selected fields (or `null` if not found).
+  """
+  plantingPlan(
+    """
+    The unique ID of the object.
+    """
+    id: UUID
+
+    """
+    The key used to identify the object.
+    """
+    key: PlantingPlan_Key
+
+    """
+    Fetch the first row based on the filters and ordering.
+    """
+    first: PlantingPlan_FirstRow
+  ): PlantingPlan @fdc_generated(from: "PlantingPlan", purpose: QUERY_SINGLE)
+  """
+  ✨ Look up a single `User` based on `id`, `key` or `first` and return selected fields (or `null` if not found).
+  """
+  user(
+    """
+    The unique ID of the object.
+    """
+    id: UUID
+
+    """
+    The key used to identify the object.
+    """
+    key: User_Key
+
+    """
+    Fetch the first row based on the filters and ordering.
+    """
+    first: User_FirstRow
+  ): User @fdc_generated(from: "User", purpose: QUERY_SINGLE)
+  """
+  ✨ List `Crop` objects in the table and return selected fields, optionally filtered by `where` conditions
+  """
+  crops(
+    """
+    Filter condition to narrow down the query results.
+    """
+    where: Crop_Filter
+
+    """
+    Order the query results by specific fields.
+    """
+    orderBy: [Crop_Order!]
+
+    """
+    Number of rows to skip before starting to return the results.
+    """
+    offset: Int
+
+    """
+    Maximum number of rows to return (defaults to 100 rows).
+    """
+    limit: Int = 100
+
+    """
+    Set to true to return distinct results.
+    """
+    distinct: Boolean = false
+
+    """
+    Filter condition to apply to the groups of aggregate queries.
+    """
+    having: Crop_Having
+  ): [Crop!]! @fdc_generated(from: "Crop", purpose: QUERY_MULTIPLE)
+  """
+  ✨ List `Harvest` objects in the table and return selected fields, optionally filtered by `where` conditions
+  """
+  harvests(
+    """
+    Filter condition to narrow down the query results.
+    """
+    where: Harvest_Filter
+
+    """
+    Order the query results by specific fields.
+    """
+    orderBy: [Harvest_Order!]
+
+    """
+    Number of rows to skip before starting to return the results.
+    """
+    offset: Int
+
+    """
+    Maximum number of rows to return (defaults to 100 rows).
+    """
+    limit: Int = 100
+
+    """
+    Set to true to return distinct results.
+    """
+    distinct: Boolean = false
+
+    """
+    Filter condition to apply to the groups of aggregate queries.
+    """
+    having: Harvest_Having
+  ): [Harvest!]! @fdc_generated(from: "Harvest", purpose: QUERY_MULTIPLE)
+  """
+  ✨ List `Inventory` objects in the table and return selected fields, optionally filtered by `where` conditions
+  """
+  inventories(
+    """
+    Filter condition to narrow down the query results.
+    """
+    where: Inventory_Filter
+
+    """
+    Order the query results by specific fields.
+    """
+    orderBy: [Inventory_Order!]
+
+    """
+    Number of rows to skip before starting to return the results.
+    """
+    offset: Int
+
+    """
+    Maximum number of rows to return (defaults to 100 rows).
+    """
+    limit: Int = 100
+
+    """
+    Set to true to return distinct results.
+    """
+    distinct: Boolean = false
+
+    """
+    Filter condition to apply to the groups of aggregate queries.
+    """
+    having: Inventory_Having
+  ): [Inventory!]! @fdc_generated(from: "Inventory", purpose: QUERY_MULTIPLE)
+  """
+  ✨ List `PlantingPlan` objects in the table and return selected fields, optionally filtered by `where` conditions
+  """
+  plantingPlans(
+    """
+    Filter condition to narrow down the query results.
+    """
+    where: PlantingPlan_Filter
+
+    """
+    Order the query results by specific fields.
+    """
+    orderBy: [PlantingPlan_Order!]
+
+    """
+    Number of rows to skip before starting to return the results.
+    """
+    offset: Int
+
+    """
+    Maximum number of rows to return (defaults to 100 rows).
+    """
+    limit: Int = 100
+
+    """
+    Set to true to return distinct results.
+    """
+    distinct: Boolean = false
+
+    """
+    Filter condition to apply to the groups of aggregate queries.
+    """
+    having: PlantingPlan_Having
+  ): [PlantingPlan!]! @fdc_generated(from: "PlantingPlan", purpose: QUERY_MULTIPLE)
+  """
+  ✨ List `User` objects in the table and return selected fields, optionally filtered by `where` conditions
+  """
+  users(
+    """
+    Filter condition to narrow down the query results.
+    """
+    where: User_Filter
+
+    """
+    Order the query results by specific fields.
+    """
+    orderBy: [User_Order!]
+
+    """
+    Number of rows to skip before starting to return the results.
+    """
+    offset: Int
+
+    """
+    Maximum number of rows to return (defaults to 100 rows).
+    """
+    limit: Int = 100
+
+    """
+    Set to true to return distinct results.
+    """
+    distinct: Boolean = false
+
+    """
+    Filter condition to apply to the groups of aggregate queries.
+    """
+    having: User_Having
+  ): [User!]! @fdc_generated(from: "User", purpose: QUERY_MULTIPLE)
+}

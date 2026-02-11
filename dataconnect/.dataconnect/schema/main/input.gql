@@ -1,0 +1,1773 @@
+"""
+✨ `Crop_KeyOutput` returns the primary key fields of table type `Crop`.
+
+It has the same format as `Crop_Key`, but is only used as mutation return value.
+"""
+scalar Crop_KeyOutput
+"""
+✨ `Harvest_KeyOutput` returns the primary key fields of table type `Harvest`.
+
+It has the same format as `Harvest_Key`, but is only used as mutation return value.
+"""
+scalar Harvest_KeyOutput
+"""
+✨ `Inventory_KeyOutput` returns the primary key fields of table type `Inventory`.
+
+It has the same format as `Inventory_Key`, but is only used as mutation return value.
+"""
+scalar Inventory_KeyOutput
+"""
+✨ `PlantingPlan_KeyOutput` returns the primary key fields of table type `PlantingPlan`.
+
+It has the same format as `PlantingPlan_Key`, but is only used as mutation return value.
+"""
+scalar PlantingPlan_KeyOutput
+"""
+✨ `User_KeyOutput` returns the primary key fields of table type `User`.
+
+It has the same format as `User_Key`, but is only used as mutation return value.
+"""
+scalar User_KeyOutput
+"""
+✨ Generated data input type for table 'Crop'. It includes all necessary fields for creating or upserting rows into table.
+"""
+input Crop_Data {
+  """
+  ✨ Generated from Field `Crop`.`id` of type `UUID!`
+  """
+  id: UUID
+  """
+  ✨ `_expr` server value variant of `id` (✨ Generated from Field `Crop`.`id` of type `UUID!`)
+  """
+  id_expr: UUID_Expr
+  """
+  ✨ Generated from Field `Crop`.`createdAt` of type `Timestamp!`
+  """
+  createdAt: Timestamp
+  """
+  ✨ `_expr` server value variant of `createdAt` (✨ Generated from Field `Crop`.`createdAt` of type `Timestamp!`)
+  """
+  createdAt_expr: Timestamp_Expr
+  """
+  ✨ `_time` server value variant of `createdAt` (✨ Generated from Field `Crop`.`createdAt` of type `Timestamp!`)
+  """
+  createdAt_time: Timestamp_Relative
+  """
+  ✨ `_update` server value variant of `createdAt` (✨ Generated from Field `Crop`.`createdAt` of type `Timestamp!`)
+  """
+  createdAt_update: [Timestamp_Update!]
+  """
+  ✨ Generated from Field `Crop`.`description` of type `String`
+  """
+  description: String
+  """
+  ✨ `_expr` server value variant of `description` (✨ Generated from Field `Crop`.`description` of type `String`)
+  """
+  description_expr: String_Expr
+  """
+  ✨ Generated from Field `Crop`.`harvestSeason` of type `String`
+  """
+  harvestSeason: String
+  """
+  ✨ `_expr` server value variant of `harvestSeason` (✨ Generated from Field `Crop`.`harvestSeason` of type `String`)
+  """
+  harvestSeason_expr: String_Expr
+  """
+  ✨ Generated from Field `Crop`.`name` of type `String!`
+  """
+  name: String
+  """
+  ✨ `_expr` server value variant of `name` (✨ Generated from Field `Crop`.`name` of type `String!`)
+  """
+  name_expr: String_Expr
+}
+"""
+✨ Generated filter input type for table 'Crop'. This input allows filtering objects using various conditions. Use `_or`, `_and`, and `_not` to compose complex filters.
+"""
+input Crop_Filter {
+  """
+  Apply multiple filter conditions using `AND` logic.
+  """
+  _and: [Crop_Filter!]
+  """
+  Negate the result of the provided filter condition.
+  """
+  _not: Crop_Filter
+  """
+  Apply multiple filter conditions using `OR` logic.
+  """
+  _or: [Crop_Filter!]
+  """
+  ✨ Generated from Field `Crop`.`id` of type `UUID!`
+  """
+  id: UUID_Filter
+  """
+  ✨ Generated from Field `Crop`.`createdAt` of type `Timestamp!`
+  """
+  createdAt: Timestamp_Filter
+  """
+  ✨ Generated from Field `Crop`.`description` of type `String`
+  """
+  description: String_Filter
+  """
+  ✨ Generated from Field `Crop`.`harvestSeason` of type `String`
+  """
+  harvestSeason: String_Filter
+  """
+  ✨ Generated from Field `Crop`.`name` of type `String!`
+  """
+  name: String_Filter
+  """
+  ✨ Generated from Field `Crop`.`harvests_on_crop` of type `[Harvest!]!`
+  """
+  harvests_on_crop: Harvest_ListFilter
+  """
+  ✨ Generated from Field `Crop`.`inventories_on_crop` of type `[Inventory!]!`
+  """
+  inventories_on_crop: Inventory_ListFilter
+  """
+  ✨ Generated from Field `Crop`.`plantingPlans_on_crop` of type `[PlantingPlan!]!`
+  """
+  plantingPlans_on_crop: PlantingPlan_ListFilter
+}
+"""
+✨ Generated first-row input type for table 'Crop'. This input selects the first row matching the filter criteria, ordered according to the specified conditions.
+"""
+input Crop_FirstRow {
+  """
+  Order the result by the specified fields.
+  """
+  orderBy: [Crop_Order!]
+  """
+  Filters rows based on the specified conditions.
+  """
+  where: Crop_Filter
+}
+"""
+✨ Generated having input type for table 'Crop'. This input allows you to filter groups during aggregate queries using various conditions. Use `_or`, `_and`, and `_not` to compose complex filters.
+"""
+input Crop_Having {
+  """
+  Apply multiple Having conditions using `AND` logic.
+  """
+  _and: [Crop_Having!]
+  """
+  Whether to apply DISTINCT to the aggregate function.
+  """
+  _distinct: Boolean
+  """
+  Negate the result of the provided Having condition.
+  """
+  _not: Crop_Having
+  """
+  Apply multiple Having conditions using `OR` logic.
+  """
+  _or: [Crop_Having!]
+  """
+  ✨ Generated from Field `Crop`.`_count` of type `Int!`
+  """
+  _count: Int_Filter
+  """
+  ✨ Generated from Field `Crop`.`createdAt_count` of type `Int!`
+  """
+  createdAt_count: Int_Filter
+  """
+  ✨ Generated from Field `Crop`.`description_count` of type `Int!`
+  """
+  description_count: Int_Filter
+  """
+  ✨ Generated from Field `Crop`.`harvestSeason_count` of type `Int!`
+  """
+  harvestSeason_count: Int_Filter
+  """
+  ✨ Generated from Field `Crop`.`id_count` of type `Int!`
+  """
+  id_count: Int_Filter
+  """
+  ✨ Generated from Field `Crop`.`name_count` of type `Int!`
+  """
+  name_count: Int_Filter
+  """
+  ✨ Generated from Field `Crop`.`createdAt_min` of type `Timestamp`
+  """
+  createdAt_min: Timestamp_Filter
+  """
+  ✨ Generated from Field `Crop`.`createdAt_max` of type `Timestamp`
+  """
+  createdAt_max: Timestamp_Filter
+}
+"""
+✨ Generated key input type for table 'Crop'. It represents the primary key fields used to uniquely identify a row in the table.
+"""
+input Crop_Key {
+  """
+  ✨ Generated from Field `Crop`.`id` of type `UUID!`
+  """
+  id: UUID
+  """
+  ✨ `_expr` server value variant of `id` (✨ Generated from Field `Crop`.`id` of type `UUID!`)
+  """
+  id_expr: UUID_Expr
+}
+"""
+✨ Generated list filter input type for table 'Crop'. This input applies filtering logic based on the count or existence of related objects that matches certain criteria.
+"""
+input Crop_ListFilter {
+  """
+  The desired number of objects that match the condition (defaults to at least one).
+  """
+  count: Int_Filter = {gt:0}
+  """
+  Condition of the related objects to filter for.
+  """
+  exist: Crop_Filter
+}
+"""
+✨ Generated order input type for table 'Crop'. This input defines the sorting order of rows in query results based on one or more fields.
+"""
+input Crop_Order {
+  """
+  ✨ Generated from Field `Crop`.`id` of type `UUID!`
+  """
+  id: OrderDirection
+  """
+  ✨ Generated from Field `Crop`.`createdAt` of type `Timestamp!`
+  """
+  createdAt: OrderDirection
+  """
+  ✨ Generated from Field `Crop`.`description` of type `String`
+  """
+  description: OrderDirection
+  """
+  ✨ Generated from Field `Crop`.`harvestSeason` of type `String`
+  """
+  harvestSeason: OrderDirection
+  """
+  ✨ Generated from Field `Crop`.`name` of type `String!`
+  """
+  name: OrderDirection
+  """
+  ✨ Generated from Field `Crop`.`_count` of type `Int!`
+  """
+  _count: OrderDirection
+  """
+  ✨ Generated from Field `Crop`.`createdAt_count` of type `Int!`
+  """
+  createdAt_count: OrderDirection
+  """
+  ✨ Generated from Field `Crop`.`description_count` of type `Int!`
+  """
+  description_count: OrderDirection
+  """
+  ✨ Generated from Field `Crop`.`harvestSeason_count` of type `Int!`
+  """
+  harvestSeason_count: OrderDirection
+  """
+  ✨ Generated from Field `Crop`.`id_count` of type `Int!`
+  """
+  id_count: OrderDirection
+  """
+  ✨ Generated from Field `Crop`.`name_count` of type `Int!`
+  """
+  name_count: OrderDirection
+  """
+  ✨ Generated from Field `Crop`.`createdAt_min` of type `Timestamp`
+  """
+  createdAt_min: OrderDirection
+  """
+  ✨ Generated from Field `Crop`.`createdAt_max` of type `Timestamp`
+  """
+  createdAt_max: OrderDirection
+}
+"""
+✨ Generated data input type for table 'Harvest'. It includes all necessary fields for creating or upserting rows into table.
+"""
+input Harvest_Data {
+  """
+  ✨ Generated from Field `Harvest`.`id` of type `UUID!`
+  """
+  id: UUID
+  """
+  ✨ `_expr` server value variant of `id` (✨ Generated from Field `Harvest`.`id` of type `UUID!`)
+  """
+  id_expr: UUID_Expr
+  """
+  ✨ Generated from Field `Harvest`.`cropId` of type `UUID!`
+  """
+  cropId: UUID
+  """
+  ✨ `_expr` server value variant of `cropId` (✨ Generated from Field `Harvest`.`cropId` of type `UUID!`)
+  """
+  cropId_expr: UUID_Expr
+  """
+  ✨ Generated from Field `Harvest`.`userId` of type `UUID!`
+  """
+  userId: UUID
+  """
+  ✨ `_expr` server value variant of `userId` (✨ Generated from Field `Harvest`.`userId` of type `UUID!`)
+  """
+  userId_expr: UUID_Expr
+  """
+  ✨ Generated from Field `Harvest`.`crop` of type `Crop!`
+  """
+  crop: Crop_Key
+  """
+  ✨ Generated from Field `Harvest`.`user` of type `User!`
+  """
+  user: User_Key
+  """
+  ✨ Generated from Field `Harvest`.`createdAt` of type `Timestamp!`
+  """
+  createdAt: Timestamp
+  """
+  ✨ `_expr` server value variant of `createdAt` (✨ Generated from Field `Harvest`.`createdAt` of type `Timestamp!`)
+  """
+  createdAt_expr: Timestamp_Expr
+  """
+  ✨ `_time` server value variant of `createdAt` (✨ Generated from Field `Harvest`.`createdAt` of type `Timestamp!`)
+  """
+  createdAt_time: Timestamp_Relative
+  """
+  ✨ `_update` server value variant of `createdAt` (✨ Generated from Field `Harvest`.`createdAt` of type `Timestamp!`)
+  """
+  createdAt_update: [Timestamp_Update!]
+  """
+  ✨ Generated from Field `Harvest`.`harvestDate` of type `Date!`
+  """
+  harvestDate: Date
+  """
+  ✨ `_date` server value variant of `harvestDate` (✨ Generated from Field `Harvest`.`harvestDate` of type `Date!`)
+  """
+  harvestDate_date: Date_Relative
+  """
+  ✨ `_expr` server value variant of `harvestDate` (✨ Generated from Field `Harvest`.`harvestDate` of type `Date!`)
+  """
+  harvestDate_expr: Date_Expr
+  """
+  ✨ `_update` server value variant of `harvestDate` (✨ Generated from Field `Harvest`.`harvestDate` of type `Date!`)
+  """
+  harvestDate_update: [Date_Update!]
+  """
+  ✨ Generated from Field `Harvest`.`location` of type `String`
+  """
+  location: String
+  """
+  ✨ `_expr` server value variant of `location` (✨ Generated from Field `Harvest`.`location` of type `String`)
+  """
+  location_expr: String_Expr
+  """
+  ✨ Generated from Field `Harvest`.`notes` of type `String`
+  """
+  notes: String
+  """
+  ✨ `_expr` server value variant of `notes` (✨ Generated from Field `Harvest`.`notes` of type `String`)
+  """
+  notes_expr: String_Expr
+  """
+  ✨ Generated from Field `Harvest`.`quantity` of type `Float!`
+  """
+  quantity: Float
+  """
+  ✨ `_expr` server value variant of `quantity` (✨ Generated from Field `Harvest`.`quantity` of type `Float!`)
+  """
+  quantity_expr: Float_Expr
+  """
+  ✨ `_update` server value variant of `quantity` (✨ Generated from Field `Harvest`.`quantity` of type `Float!`)
+  """
+  quantity_update: [Float_Update!]
+  """
+  ✨ Generated from Field `Harvest`.`unit` of type `String!`
+  """
+  unit: String
+  """
+  ✨ `_expr` server value variant of `unit` (✨ Generated from Field `Harvest`.`unit` of type `String!`)
+  """
+  unit_expr: String_Expr
+}
+"""
+✨ Generated filter input type for table 'Harvest'. This input allows filtering objects using various conditions. Use `_or`, `_and`, and `_not` to compose complex filters.
+"""
+input Harvest_Filter {
+  """
+  Apply multiple filter conditions using `AND` logic.
+  """
+  _and: [Harvest_Filter!]
+  """
+  Negate the result of the provided filter condition.
+  """
+  _not: Harvest_Filter
+  """
+  Apply multiple filter conditions using `OR` logic.
+  """
+  _or: [Harvest_Filter!]
+  """
+  ✨ Generated from Field `Harvest`.`id` of type `UUID!`
+  """
+  id: UUID_Filter
+  """
+  ✨ Generated from Field `Harvest`.`cropId` of type `UUID!`
+  """
+  cropId: UUID_Filter
+  """
+  ✨ Generated from Field `Harvest`.`userId` of type `UUID!`
+  """
+  userId: UUID_Filter
+  """
+  ✨ Generated from Field `Harvest`.`crop` of type `Crop!`
+  """
+  crop: Crop_Filter
+  """
+  ✨ Generated from Field `Harvest`.`user` of type `User!`
+  """
+  user: User_Filter
+  """
+  ✨ Generated from Field `Harvest`.`createdAt` of type `Timestamp!`
+  """
+  createdAt: Timestamp_Filter
+  """
+  ✨ Generated from Field `Harvest`.`harvestDate` of type `Date!`
+  """
+  harvestDate: Date_Filter
+  """
+  ✨ Generated from Field `Harvest`.`location` of type `String`
+  """
+  location: String_Filter
+  """
+  ✨ Generated from Field `Harvest`.`notes` of type `String`
+  """
+  notes: String_Filter
+  """
+  ✨ Generated from Field `Harvest`.`quantity` of type `Float!`
+  """
+  quantity: Float_Filter
+  """
+  ✨ Generated from Field `Harvest`.`unit` of type `String!`
+  """
+  unit: String_Filter
+}
+"""
+✨ Generated first-row input type for table 'Harvest'. This input selects the first row matching the filter criteria, ordered according to the specified conditions.
+"""
+input Harvest_FirstRow {
+  """
+  Order the result by the specified fields.
+  """
+  orderBy: [Harvest_Order!]
+  """
+  Filters rows based on the specified conditions.
+  """
+  where: Harvest_Filter
+}
+"""
+✨ Generated having input type for table 'Harvest'. This input allows you to filter groups during aggregate queries using various conditions. Use `_or`, `_and`, and `_not` to compose complex filters.
+"""
+input Harvest_Having {
+  """
+  Apply multiple Having conditions using `AND` logic.
+  """
+  _and: [Harvest_Having!]
+  """
+  Whether to apply DISTINCT to the aggregate function.
+  """
+  _distinct: Boolean
+  """
+  Negate the result of the provided Having condition.
+  """
+  _not: Harvest_Having
+  """
+  Apply multiple Having conditions using `OR` logic.
+  """
+  _or: [Harvest_Having!]
+  """
+  ✨ Generated from Field `Harvest`.`_count` of type `Int!`
+  """
+  _count: Int_Filter
+  """
+  ✨ Generated from Field `Harvest`.`createdAt_count` of type `Int!`
+  """
+  createdAt_count: Int_Filter
+  """
+  ✨ Generated from Field `Harvest`.`cropId_count` of type `Int!`
+  """
+  cropId_count: Int_Filter
+  """
+  ✨ Generated from Field `Harvest`.`harvestDate_count` of type `Int!`
+  """
+  harvestDate_count: Int_Filter
+  """
+  ✨ Generated from Field `Harvest`.`id_count` of type `Int!`
+  """
+  id_count: Int_Filter
+  """
+  ✨ Generated from Field `Harvest`.`location_count` of type `Int!`
+  """
+  location_count: Int_Filter
+  """
+  ✨ Generated from Field `Harvest`.`notes_count` of type `Int!`
+  """
+  notes_count: Int_Filter
+  """
+  ✨ Generated from Field `Harvest`.`quantity_count` of type `Int!`
+  """
+  quantity_count: Int_Filter
+  """
+  ✨ Generated from Field `Harvest`.`unit_count` of type `Int!`
+  """
+  unit_count: Int_Filter
+  """
+  ✨ Generated from Field `Harvest`.`userId_count` of type `Int!`
+  """
+  userId_count: Int_Filter
+  """
+  ✨ Generated from Field `Harvest`.`quantity_sum` of type `Float`
+  """
+  quantity_sum: Float_Filter
+  """
+  ✨ Generated from Field `Harvest`.`quantity_avg` of type `Float`
+  """
+  quantity_avg: Float_Filter
+  """
+  ✨ Generated from Field `Harvest`.`createdAt_min` of type `Timestamp`
+  """
+  createdAt_min: Timestamp_Filter
+  """
+  ✨ Generated from Field `Harvest`.`harvestDate_min` of type `Date`
+  """
+  harvestDate_min: Date_Filter
+  """
+  ✨ Generated from Field `Harvest`.`quantity_min` of type `Float`
+  """
+  quantity_min: Float_Filter
+  """
+  ✨ Generated from Field `Harvest`.`createdAt_max` of type `Timestamp`
+  """
+  createdAt_max: Timestamp_Filter
+  """
+  ✨ Generated from Field `Harvest`.`harvestDate_max` of type `Date`
+  """
+  harvestDate_max: Date_Filter
+  """
+  ✨ Generated from Field `Harvest`.`quantity_max` of type `Float`
+  """
+  quantity_max: Float_Filter
+}
+"""
+✨ Generated key input type for table 'Harvest'. It represents the primary key fields used to uniquely identify a row in the table.
+"""
+input Harvest_Key {
+  """
+  ✨ Generated from Field `Harvest`.`id` of type `UUID!`
+  """
+  id: UUID
+  """
+  ✨ `_expr` server value variant of `id` (✨ Generated from Field `Harvest`.`id` of type `UUID!`)
+  """
+  id_expr: UUID_Expr
+}
+"""
+✨ Generated list filter input type for table 'Harvest'. This input applies filtering logic based on the count or existence of related objects that matches certain criteria.
+"""
+input Harvest_ListFilter {
+  """
+  The desired number of objects that match the condition (defaults to at least one).
+  """
+  count: Int_Filter = {gt:0}
+  """
+  Condition of the related objects to filter for.
+  """
+  exist: Harvest_Filter
+}
+"""
+✨ Generated order input type for table 'Harvest'. This input defines the sorting order of rows in query results based on one or more fields.
+"""
+input Harvest_Order {
+  """
+  ✨ Generated from Field `Harvest`.`id` of type `UUID!`
+  """
+  id: OrderDirection
+  """
+  ✨ Generated from Field `Harvest`.`cropId` of type `UUID!`
+  """
+  cropId: OrderDirection
+  """
+  ✨ Generated from Field `Harvest`.`userId` of type `UUID!`
+  """
+  userId: OrderDirection
+  """
+  ✨ Generated from Field `Harvest`.`crop` of type `Crop!`
+  """
+  crop: Crop_Order
+  """
+  ✨ Generated from Field `Harvest`.`user` of type `User!`
+  """
+  user: User_Order
+  """
+  ✨ Generated from Field `Harvest`.`createdAt` of type `Timestamp!`
+  """
+  createdAt: OrderDirection
+  """
+  ✨ Generated from Field `Harvest`.`harvestDate` of type `Date!`
+  """
+  harvestDate: OrderDirection
+  """
+  ✨ Generated from Field `Harvest`.`location` of type `String`
+  """
+  location: OrderDirection
+  """
+  ✨ Generated from Field `Harvest`.`notes` of type `String`
+  """
+  notes: OrderDirection
+  """
+  ✨ Generated from Field `Harvest`.`quantity` of type `Float!`
+  """
+  quantity: OrderDirection
+  """
+  ✨ Generated from Field `Harvest`.`unit` of type `String!`
+  """
+  unit: OrderDirection
+  """
+  ✨ Generated from Field `Harvest`.`_count` of type `Int!`
+  """
+  _count: OrderDirection
+  """
+  ✨ Generated from Field `Harvest`.`createdAt_count` of type `Int!`
+  """
+  createdAt_count: OrderDirection
+  """
+  ✨ Generated from Field `Harvest`.`cropId_count` of type `Int!`
+  """
+  cropId_count: OrderDirection
+  """
+  ✨ Generated from Field `Harvest`.`harvestDate_count` of type `Int!`
+  """
+  harvestDate_count: OrderDirection
+  """
+  ✨ Generated from Field `Harvest`.`id_count` of type `Int!`
+  """
+  id_count: OrderDirection
+  """
+  ✨ Generated from Field `Harvest`.`location_count` of type `Int!`
+  """
+  location_count: OrderDirection
+  """
+  ✨ Generated from Field `Harvest`.`notes_count` of type `Int!`
+  """
+  notes_count: OrderDirection
+  """
+  ✨ Generated from Field `Harvest`.`quantity_count` of type `Int!`
+  """
+  quantity_count: OrderDirection
+  """
+  ✨ Generated from Field `Harvest`.`unit_count` of type `Int!`
+  """
+  unit_count: OrderDirection
+  """
+  ✨ Generated from Field `Harvest`.`userId_count` of type `Int!`
+  """
+  userId_count: OrderDirection
+  """
+  ✨ Generated from Field `Harvest`.`quantity_sum` of type `Float`
+  """
+  quantity_sum: OrderDirection
+  """
+  ✨ Generated from Field `Harvest`.`quantity_avg` of type `Float`
+  """
+  quantity_avg: OrderDirection
+  """
+  ✨ Generated from Field `Harvest`.`createdAt_min` of type `Timestamp`
+  """
+  createdAt_min: OrderDirection
+  """
+  ✨ Generated from Field `Harvest`.`harvestDate_min` of type `Date`
+  """
+  harvestDate_min: OrderDirection
+  """
+  ✨ Generated from Field `Harvest`.`quantity_min` of type `Float`
+  """
+  quantity_min: OrderDirection
+  """
+  ✨ Generated from Field `Harvest`.`createdAt_max` of type `Timestamp`
+  """
+  createdAt_max: OrderDirection
+  """
+  ✨ Generated from Field `Harvest`.`harvestDate_max` of type `Date`
+  """
+  harvestDate_max: OrderDirection
+  """
+  ✨ Generated from Field `Harvest`.`quantity_max` of type `Float`
+  """
+  quantity_max: OrderDirection
+}
+"""
+✨ Generated data input type for table 'Inventory'. It includes all necessary fields for creating or upserting rows into table.
+"""
+input Inventory_Data {
+  """
+  ✨ Generated from Field `Inventory`.`id` of type `UUID!`
+  """
+  id: UUID
+  """
+  ✨ `_expr` server value variant of `id` (✨ Generated from Field `Inventory`.`id` of type `UUID!`)
+  """
+  id_expr: UUID_Expr
+  """
+  ✨ Generated from Field `Inventory`.`cropId` of type `UUID!`
+  """
+  cropId: UUID
+  """
+  ✨ `_expr` server value variant of `cropId` (✨ Generated from Field `Inventory`.`cropId` of type `UUID!`)
+  """
+  cropId_expr: UUID_Expr
+  """
+  ✨ Generated from Field `Inventory`.`crop` of type `Crop!`
+  """
+  crop: Crop_Key
+  """
+  ✨ Generated from Field `Inventory`.`lastUpdated` of type `Timestamp!`
+  """
+  lastUpdated: Timestamp
+  """
+  ✨ `_expr` server value variant of `lastUpdated` (✨ Generated from Field `Inventory`.`lastUpdated` of type `Timestamp!`)
+  """
+  lastUpdated_expr: Timestamp_Expr
+  """
+  ✨ `_time` server value variant of `lastUpdated` (✨ Generated from Field `Inventory`.`lastUpdated` of type `Timestamp!`)
+  """
+  lastUpdated_time: Timestamp_Relative
+  """
+  ✨ `_update` server value variant of `lastUpdated` (✨ Generated from Field `Inventory`.`lastUpdated` of type `Timestamp!`)
+  """
+  lastUpdated_update: [Timestamp_Update!]
+  """
+  ✨ Generated from Field `Inventory`.`notes` of type `String`
+  """
+  notes: String
+  """
+  ✨ `_expr` server value variant of `notes` (✨ Generated from Field `Inventory`.`notes` of type `String`)
+  """
+  notes_expr: String_Expr
+  """
+  ✨ Generated from Field `Inventory`.`quantity` of type `Float!`
+  """
+  quantity: Float
+  """
+  ✨ `_expr` server value variant of `quantity` (✨ Generated from Field `Inventory`.`quantity` of type `Float!`)
+  """
+  quantity_expr: Float_Expr
+  """
+  ✨ `_update` server value variant of `quantity` (✨ Generated from Field `Inventory`.`quantity` of type `Float!`)
+  """
+  quantity_update: [Float_Update!]
+  """
+  ✨ Generated from Field `Inventory`.`storageLocation` of type `String!`
+  """
+  storageLocation: String
+  """
+  ✨ `_expr` server value variant of `storageLocation` (✨ Generated from Field `Inventory`.`storageLocation` of type `String!`)
+  """
+  storageLocation_expr: String_Expr
+  """
+  ✨ Generated from Field `Inventory`.`unit` of type `String!`
+  """
+  unit: String
+  """
+  ✨ `_expr` server value variant of `unit` (✨ Generated from Field `Inventory`.`unit` of type `String!`)
+  """
+  unit_expr: String_Expr
+}
+"""
+✨ Generated filter input type for table 'Inventory'. This input allows filtering objects using various conditions. Use `_or`, `_and`, and `_not` to compose complex filters.
+"""
+input Inventory_Filter {
+  """
+  Apply multiple filter conditions using `AND` logic.
+  """
+  _and: [Inventory_Filter!]
+  """
+  Negate the result of the provided filter condition.
+  """
+  _not: Inventory_Filter
+  """
+  Apply multiple filter conditions using `OR` logic.
+  """
+  _or: [Inventory_Filter!]
+  """
+  ✨ Generated from Field `Inventory`.`id` of type `UUID!`
+  """
+  id: UUID_Filter
+  """
+  ✨ Generated from Field `Inventory`.`cropId` of type `UUID!`
+  """
+  cropId: UUID_Filter
+  """
+  ✨ Generated from Field `Inventory`.`crop` of type `Crop!`
+  """
+  crop: Crop_Filter
+  """
+  ✨ Generated from Field `Inventory`.`lastUpdated` of type `Timestamp!`
+  """
+  lastUpdated: Timestamp_Filter
+  """
+  ✨ Generated from Field `Inventory`.`notes` of type `String`
+  """
+  notes: String_Filter
+  """
+  ✨ Generated from Field `Inventory`.`quantity` of type `Float!`
+  """
+  quantity: Float_Filter
+  """
+  ✨ Generated from Field `Inventory`.`storageLocation` of type `String!`
+  """
+  storageLocation: String_Filter
+  """
+  ✨ Generated from Field `Inventory`.`unit` of type `String!`
+  """
+  unit: String_Filter
+}
+"""
+✨ Generated first-row input type for table 'Inventory'. This input selects the first row matching the filter criteria, ordered according to the specified conditions.
+"""
+input Inventory_FirstRow {
+  """
+  Order the result by the specified fields.
+  """
+  orderBy: [Inventory_Order!]
+  """
+  Filters rows based on the specified conditions.
+  """
+  where: Inventory_Filter
+}
+"""
+✨ Generated having input type for table 'Inventory'. This input allows you to filter groups during aggregate queries using various conditions. Use `_or`, `_and`, and `_not` to compose complex filters.
+"""
+input Inventory_Having {
+  """
+  Apply multiple Having conditions using `AND` logic.
+  """
+  _and: [Inventory_Having!]
+  """
+  Whether to apply DISTINCT to the aggregate function.
+  """
+  _distinct: Boolean
+  """
+  Negate the result of the provided Having condition.
+  """
+  _not: Inventory_Having
+  """
+  Apply multiple Having conditions using `OR` logic.
+  """
+  _or: [Inventory_Having!]
+  """
+  ✨ Generated from Field `Inventory`.`_count` of type `Int!`
+  """
+  _count: Int_Filter
+  """
+  ✨ Generated from Field `Inventory`.`cropId_count` of type `Int!`
+  """
+  cropId_count: Int_Filter
+  """
+  ✨ Generated from Field `Inventory`.`id_count` of type `Int!`
+  """
+  id_count: Int_Filter
+  """
+  ✨ Generated from Field `Inventory`.`lastUpdated_count` of type `Int!`
+  """
+  lastUpdated_count: Int_Filter
+  """
+  ✨ Generated from Field `Inventory`.`notes_count` of type `Int!`
+  """
+  notes_count: Int_Filter
+  """
+  ✨ Generated from Field `Inventory`.`quantity_count` of type `Int!`
+  """
+  quantity_count: Int_Filter
+  """
+  ✨ Generated from Field `Inventory`.`storageLocation_count` of type `Int!`
+  """
+  storageLocation_count: Int_Filter
+  """
+  ✨ Generated from Field `Inventory`.`unit_count` of type `Int!`
+  """
+  unit_count: Int_Filter
+  """
+  ✨ Generated from Field `Inventory`.`quantity_sum` of type `Float`
+  """
+  quantity_sum: Float_Filter
+  """
+  ✨ Generated from Field `Inventory`.`quantity_avg` of type `Float`
+  """
+  quantity_avg: Float_Filter
+  """
+  ✨ Generated from Field `Inventory`.`lastUpdated_min` of type `Timestamp`
+  """
+  lastUpdated_min: Timestamp_Filter
+  """
+  ✨ Generated from Field `Inventory`.`quantity_min` of type `Float`
+  """
+  quantity_min: Float_Filter
+  """
+  ✨ Generated from Field `Inventory`.`lastUpdated_max` of type `Timestamp`
+  """
+  lastUpdated_max: Timestamp_Filter
+  """
+  ✨ Generated from Field `Inventory`.`quantity_max` of type `Float`
+  """
+  quantity_max: Float_Filter
+}
+"""
+✨ Generated key input type for table 'Inventory'. It represents the primary key fields used to uniquely identify a row in the table.
+"""
+input Inventory_Key {
+  """
+  ✨ Generated from Field `Inventory`.`id` of type `UUID!`
+  """
+  id: UUID
+  """
+  ✨ `_expr` server value variant of `id` (✨ Generated from Field `Inventory`.`id` of type `UUID!`)
+  """
+  id_expr: UUID_Expr
+}
+"""
+✨ Generated list filter input type for table 'Inventory'. This input applies filtering logic based on the count or existence of related objects that matches certain criteria.
+"""
+input Inventory_ListFilter {
+  """
+  The desired number of objects that match the condition (defaults to at least one).
+  """
+  count: Int_Filter = {gt:0}
+  """
+  Condition of the related objects to filter for.
+  """
+  exist: Inventory_Filter
+}
+"""
+✨ Generated order input type for table 'Inventory'. This input defines the sorting order of rows in query results based on one or more fields.
+"""
+input Inventory_Order {
+  """
+  ✨ Generated from Field `Inventory`.`id` of type `UUID!`
+  """
+  id: OrderDirection
+  """
+  ✨ Generated from Field `Inventory`.`cropId` of type `UUID!`
+  """
+  cropId: OrderDirection
+  """
+  ✨ Generated from Field `Inventory`.`crop` of type `Crop!`
+  """
+  crop: Crop_Order
+  """
+  ✨ Generated from Field `Inventory`.`lastUpdated` of type `Timestamp!`
+  """
+  lastUpdated: OrderDirection
+  """
+  ✨ Generated from Field `Inventory`.`notes` of type `String`
+  """
+  notes: OrderDirection
+  """
+  ✨ Generated from Field `Inventory`.`quantity` of type `Float!`
+  """
+  quantity: OrderDirection
+  """
+  ✨ Generated from Field `Inventory`.`storageLocation` of type `String!`
+  """
+  storageLocation: OrderDirection
+  """
+  ✨ Generated from Field `Inventory`.`unit` of type `String!`
+  """
+  unit: OrderDirection
+  """
+  ✨ Generated from Field `Inventory`.`_count` of type `Int!`
+  """
+  _count: OrderDirection
+  """
+  ✨ Generated from Field `Inventory`.`cropId_count` of type `Int!`
+  """
+  cropId_count: OrderDirection
+  """
+  ✨ Generated from Field `Inventory`.`id_count` of type `Int!`
+  """
+  id_count: OrderDirection
+  """
+  ✨ Generated from Field `Inventory`.`lastUpdated_count` of type `Int!`
+  """
+  lastUpdated_count: OrderDirection
+  """
+  ✨ Generated from Field `Inventory`.`notes_count` of type `Int!`
+  """
+  notes_count: OrderDirection
+  """
+  ✨ Generated from Field `Inventory`.`quantity_count` of type `Int!`
+  """
+  quantity_count: OrderDirection
+  """
+  ✨ Generated from Field `Inventory`.`storageLocation_count` of type `Int!`
+  """
+  storageLocation_count: OrderDirection
+  """
+  ✨ Generated from Field `Inventory`.`unit_count` of type `Int!`
+  """
+  unit_count: OrderDirection
+  """
+  ✨ Generated from Field `Inventory`.`quantity_sum` of type `Float`
+  """
+  quantity_sum: OrderDirection
+  """
+  ✨ Generated from Field `Inventory`.`quantity_avg` of type `Float`
+  """
+  quantity_avg: OrderDirection
+  """
+  ✨ Generated from Field `Inventory`.`lastUpdated_min` of type `Timestamp`
+  """
+  lastUpdated_min: OrderDirection
+  """
+  ✨ Generated from Field `Inventory`.`quantity_min` of type `Float`
+  """
+  quantity_min: OrderDirection
+  """
+  ✨ Generated from Field `Inventory`.`lastUpdated_max` of type `Timestamp`
+  """
+  lastUpdated_max: OrderDirection
+  """
+  ✨ Generated from Field `Inventory`.`quantity_max` of type `Float`
+  """
+  quantity_max: OrderDirection
+}
+"""
+✨ Generated data input type for table 'PlantingPlan'. It includes all necessary fields for creating or upserting rows into table.
+"""
+input PlantingPlan_Data {
+  """
+  ✨ Generated from Field `PlantingPlan`.`id` of type `UUID!`
+  """
+  id: UUID
+  """
+  ✨ `_expr` server value variant of `id` (✨ Generated from Field `PlantingPlan`.`id` of type `UUID!`)
+  """
+  id_expr: UUID_Expr
+  """
+  ✨ Generated from Field `PlantingPlan`.`cropId` of type `UUID!`
+  """
+  cropId: UUID
+  """
+  ✨ `_expr` server value variant of `cropId` (✨ Generated from Field `PlantingPlan`.`cropId` of type `UUID!`)
+  """
+  cropId_expr: UUID_Expr
+  """
+  ✨ Generated from Field `PlantingPlan`.`userId` of type `UUID!`
+  """
+  userId: UUID
+  """
+  ✨ `_expr` server value variant of `userId` (✨ Generated from Field `PlantingPlan`.`userId` of type `UUID!`)
+  """
+  userId_expr: UUID_Expr
+  """
+  ✨ Generated from Field `PlantingPlan`.`crop` of type `Crop!`
+  """
+  crop: Crop_Key
+  """
+  ✨ Generated from Field `PlantingPlan`.`user` of type `User!`
+  """
+  user: User_Key
+  """
+  ✨ Generated from Field `PlantingPlan`.`actualPlantDate` of type `Date`
+  """
+  actualPlantDate: Date
+  """
+  ✨ `_date` server value variant of `actualPlantDate` (✨ Generated from Field `PlantingPlan`.`actualPlantDate` of type `Date`)
+  """
+  actualPlantDate_date: Date_Relative
+  """
+  ✨ `_expr` server value variant of `actualPlantDate` (✨ Generated from Field `PlantingPlan`.`actualPlantDate` of type `Date`)
+  """
+  actualPlantDate_expr: Date_Expr
+  """
+  ✨ `_update` server value variant of `actualPlantDate` (✨ Generated from Field `PlantingPlan`.`actualPlantDate` of type `Date`)
+  """
+  actualPlantDate_update: [Date_Update!]
+  """
+  ✨ Generated from Field `PlantingPlan`.`createdAt` of type `Timestamp!`
+  """
+  createdAt: Timestamp
+  """
+  ✨ `_expr` server value variant of `createdAt` (✨ Generated from Field `PlantingPlan`.`createdAt` of type `Timestamp!`)
+  """
+  createdAt_expr: Timestamp_Expr
+  """
+  ✨ `_time` server value variant of `createdAt` (✨ Generated from Field `PlantingPlan`.`createdAt` of type `Timestamp!`)
+  """
+  createdAt_time: Timestamp_Relative
+  """
+  ✨ `_update` server value variant of `createdAt` (✨ Generated from Field `PlantingPlan`.`createdAt` of type `Timestamp!`)
+  """
+  createdAt_update: [Timestamp_Update!]
+  """
+  ✨ Generated from Field `PlantingPlan`.`expectedYield` of type `Float!`
+  """
+  expectedYield: Float
+  """
+  ✨ `_expr` server value variant of `expectedYield` (✨ Generated from Field `PlantingPlan`.`expectedYield` of type `Float!`)
+  """
+  expectedYield_expr: Float_Expr
+  """
+  ✨ `_update` server value variant of `expectedYield` (✨ Generated from Field `PlantingPlan`.`expectedYield` of type `Float!`)
+  """
+  expectedYield_update: [Float_Update!]
+  """
+  ✨ Generated from Field `PlantingPlan`.`notes` of type `String`
+  """
+  notes: String
+  """
+  ✨ `_expr` server value variant of `notes` (✨ Generated from Field `PlantingPlan`.`notes` of type `String`)
+  """
+  notes_expr: String_Expr
+  """
+  ✨ Generated from Field `PlantingPlan`.`plannedDate` of type `Date!`
+  """
+  plannedDate: Date
+  """
+  ✨ `_date` server value variant of `plannedDate` (✨ Generated from Field `PlantingPlan`.`plannedDate` of type `Date!`)
+  """
+  plannedDate_date: Date_Relative
+  """
+  ✨ `_expr` server value variant of `plannedDate` (✨ Generated from Field `PlantingPlan`.`plannedDate` of type `Date!`)
+  """
+  plannedDate_expr: Date_Expr
+  """
+  ✨ `_update` server value variant of `plannedDate` (✨ Generated from Field `PlantingPlan`.`plannedDate` of type `Date!`)
+  """
+  plannedDate_update: [Date_Update!]
+  """
+  ✨ Generated from Field `PlantingPlan`.`status` of type `String`
+  """
+  status: String
+  """
+  ✨ `_expr` server value variant of `status` (✨ Generated from Field `PlantingPlan`.`status` of type `String`)
+  """
+  status_expr: String_Expr
+  """
+  ✨ Generated from Field `PlantingPlan`.`unit` of type `String!`
+  """
+  unit: String
+  """
+  ✨ `_expr` server value variant of `unit` (✨ Generated from Field `PlantingPlan`.`unit` of type `String!`)
+  """
+  unit_expr: String_Expr
+}
+"""
+✨ Generated filter input type for table 'PlantingPlan'. This input allows filtering objects using various conditions. Use `_or`, `_and`, and `_not` to compose complex filters.
+"""
+input PlantingPlan_Filter {
+  """
+  Apply multiple filter conditions using `AND` logic.
+  """
+  _and: [PlantingPlan_Filter!]
+  """
+  Negate the result of the provided filter condition.
+  """
+  _not: PlantingPlan_Filter
+  """
+  Apply multiple filter conditions using `OR` logic.
+  """
+  _or: [PlantingPlan_Filter!]
+  """
+  ✨ Generated from Field `PlantingPlan`.`id` of type `UUID!`
+  """
+  id: UUID_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`cropId` of type `UUID!`
+  """
+  cropId: UUID_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`userId` of type `UUID!`
+  """
+  userId: UUID_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`crop` of type `Crop!`
+  """
+  crop: Crop_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`user` of type `User!`
+  """
+  user: User_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`actualPlantDate` of type `Date`
+  """
+  actualPlantDate: Date_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`createdAt` of type `Timestamp!`
+  """
+  createdAt: Timestamp_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`expectedYield` of type `Float!`
+  """
+  expectedYield: Float_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`notes` of type `String`
+  """
+  notes: String_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`plannedDate` of type `Date!`
+  """
+  plannedDate: Date_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`status` of type `String`
+  """
+  status: String_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`unit` of type `String!`
+  """
+  unit: String_Filter
+}
+"""
+✨ Generated first-row input type for table 'PlantingPlan'. This input selects the first row matching the filter criteria, ordered according to the specified conditions.
+"""
+input PlantingPlan_FirstRow {
+  """
+  Order the result by the specified fields.
+  """
+  orderBy: [PlantingPlan_Order!]
+  """
+  Filters rows based on the specified conditions.
+  """
+  where: PlantingPlan_Filter
+}
+"""
+✨ Generated having input type for table 'PlantingPlan'. This input allows you to filter groups during aggregate queries using various conditions. Use `_or`, `_and`, and `_not` to compose complex filters.
+"""
+input PlantingPlan_Having {
+  """
+  Apply multiple Having conditions using `AND` logic.
+  """
+  _and: [PlantingPlan_Having!]
+  """
+  Whether to apply DISTINCT to the aggregate function.
+  """
+  _distinct: Boolean
+  """
+  Negate the result of the provided Having condition.
+  """
+  _not: PlantingPlan_Having
+  """
+  Apply multiple Having conditions using `OR` logic.
+  """
+  _or: [PlantingPlan_Having!]
+  """
+  ✨ Generated from Field `PlantingPlan`.`_count` of type `Int!`
+  """
+  _count: Int_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`actualPlantDate_count` of type `Int!`
+  """
+  actualPlantDate_count: Int_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`createdAt_count` of type `Int!`
+  """
+  createdAt_count: Int_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`cropId_count` of type `Int!`
+  """
+  cropId_count: Int_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`expectedYield_count` of type `Int!`
+  """
+  expectedYield_count: Int_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`id_count` of type `Int!`
+  """
+  id_count: Int_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`notes_count` of type `Int!`
+  """
+  notes_count: Int_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`plannedDate_count` of type `Int!`
+  """
+  plannedDate_count: Int_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`status_count` of type `Int!`
+  """
+  status_count: Int_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`unit_count` of type `Int!`
+  """
+  unit_count: Int_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`userId_count` of type `Int!`
+  """
+  userId_count: Int_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`expectedYield_sum` of type `Float`
+  """
+  expectedYield_sum: Float_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`expectedYield_avg` of type `Float`
+  """
+  expectedYield_avg: Float_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`actualPlantDate_min` of type `Date`
+  """
+  actualPlantDate_min: Date_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`createdAt_min` of type `Timestamp`
+  """
+  createdAt_min: Timestamp_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`expectedYield_min` of type `Float`
+  """
+  expectedYield_min: Float_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`plannedDate_min` of type `Date`
+  """
+  plannedDate_min: Date_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`actualPlantDate_max` of type `Date`
+  """
+  actualPlantDate_max: Date_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`createdAt_max` of type `Timestamp`
+  """
+  createdAt_max: Timestamp_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`expectedYield_max` of type `Float`
+  """
+  expectedYield_max: Float_Filter
+  """
+  ✨ Generated from Field `PlantingPlan`.`plannedDate_max` of type `Date`
+  """
+  plannedDate_max: Date_Filter
+}
+"""
+✨ Generated key input type for table 'PlantingPlan'. It represents the primary key fields used to uniquely identify a row in the table.
+"""
+input PlantingPlan_Key {
+  """
+  ✨ Generated from Field `PlantingPlan`.`id` of type `UUID!`
+  """
+  id: UUID
+  """
+  ✨ `_expr` server value variant of `id` (✨ Generated from Field `PlantingPlan`.`id` of type `UUID!`)
+  """
+  id_expr: UUID_Expr
+}
+"""
+✨ Generated list filter input type for table 'PlantingPlan'. This input applies filtering logic based on the count or existence of related objects that matches certain criteria.
+"""
+input PlantingPlan_ListFilter {
+  """
+  The desired number of objects that match the condition (defaults to at least one).
+  """
+  count: Int_Filter = {gt:0}
+  """
+  Condition of the related objects to filter for.
+  """
+  exist: PlantingPlan_Filter
+}
+"""
+✨ Generated order input type for table 'PlantingPlan'. This input defines the sorting order of rows in query results based on one or more fields.
+"""
+input PlantingPlan_Order {
+  """
+  ✨ Generated from Field `PlantingPlan`.`id` of type `UUID!`
+  """
+  id: OrderDirection
+  """
+  ✨ Generated from Field `PlantingPlan`.`cropId` of type `UUID!`
+  """
+  cropId: OrderDirection
+  """
+  ✨ Generated from Field `PlantingPlan`.`userId` of type `UUID!`
+  """
+  userId: OrderDirection
+  """
+  ✨ Generated from Field `PlantingPlan`.`crop` of type `Crop!`
+  """
+  crop: Crop_Order
+  """
+  ✨ Generated from Field `PlantingPlan`.`user` of type `User!`
+  """
+  user: User_Order
+  """
+  ✨ Generated from Field `PlantingPlan`.`actualPlantDate` of type `Date`
+  """
+  actualPlantDate: OrderDirection
+  """
+  ✨ Generated from Field `PlantingPlan`.`createdAt` of type `Timestamp!`
+  """
+  createdAt: OrderDirection
+  """
+  ✨ Generated from Field `PlantingPlan`.`expectedYield` of type `Float!`
+  """
+  expectedYield: OrderDirection
+  """
+  ✨ Generated from Field `PlantingPlan`.`notes` of type `String`
+  """
+  notes: OrderDirection
+  """
+  ✨ Generated from Field `PlantingPlan`.`plannedDate` of type `Date!`
+  """
+  plannedDate: OrderDirection
+  """
+  ✨ Generated from Field `PlantingPlan`.`status` of type `String`
+  """
+  status: OrderDirection
+  """
+  ✨ Generated from Field `PlantingPlan`.`unit` of type `String!`
+  """
+  unit: OrderDirection
+  """
+  ✨ Generated from Field `PlantingPlan`.`_count` of type `Int!`
+  """
+  _count: OrderDirection
+  """
+  ✨ Generated from Field `PlantingPlan`.`actualPlantDate_count` of type `Int!`
+  """
+  actualPlantDate_count: OrderDirection
+  """
+  ✨ Generated from Field `PlantingPlan`.`createdAt_count` of type `Int!`
+  """
+  createdAt_count: OrderDirection
+  """
+  ✨ Generated from Field `PlantingPlan`.`cropId_count` of type `Int!`
+  """
+  cropId_count: OrderDirection
+  """
+  ✨ Generated from Field `PlantingPlan`.`expectedYield_count` of type `Int!`
+  """
+  expectedYield_count: OrderDirection
+  """
+  ✨ Generated from Field `PlantingPlan`.`id_count` of type `Int!`
+  """
+  id_count: OrderDirection
+  """
+  ✨ Generated from Field `PlantingPlan`.`notes_count` of type `Int!`
+  """
+  notes_count: OrderDirection
+  """
+  ✨ Generated from Field `PlantingPlan`.`plannedDate_count` of type `Int!`
+  """
+  plannedDate_count: OrderDirection
+  """
+  ✨ Generated from Field `PlantingPlan`.`status_count` of type `Int!`
+  """
+  status_count: OrderDirection
+  """
+  ✨ Generated from Field `PlantingPlan`.`unit_count` of type `Int!`
+  """
+  unit_count: OrderDirection
+  """
+  ✨ Generated from Field `PlantingPlan`.`userId_count` of type `Int!`
+  """
+  userId_count: OrderDirection
+  """
+  ✨ Generated from Field `PlantingPlan`.`expectedYield_sum` of type `Float`
+  """
+  expectedYield_sum: OrderDirection
+  """
+  ✨ Generated from Field `PlantingPlan`.`expectedYield_avg` of type `Float`
+  """
+  expectedYield_avg: OrderDirection
+  """
+  ✨ Generated from Field `PlantingPlan`.`actualPlantDate_min` of type `Date`
+  """
+  actualPlantDate_min: OrderDirection
+  """
+  ✨ Generated from Field `PlantingPlan`.`createdAt_min` of type `Timestamp`
+  """
+  createdAt_min: OrderDirection
+  """
+  ✨ Generated from Field `PlantingPlan`.`expectedYield_min` of type `Float`
+  """
+  expectedYield_min: OrderDirection
+  """
+  ✨ Generated from Field `PlantingPlan`.`plannedDate_min` of type `Date`
+  """
+  plannedDate_min: OrderDirection
+  """
+  ✨ Generated from Field `PlantingPlan`.`actualPlantDate_max` of type `Date`
+  """
+  actualPlantDate_max: OrderDirection
+  """
+  ✨ Generated from Field `PlantingPlan`.`createdAt_max` of type `Timestamp`
+  """
+  createdAt_max: OrderDirection
+  """
+  ✨ Generated from Field `PlantingPlan`.`expectedYield_max` of type `Float`
+  """
+  expectedYield_max: OrderDirection
+  """
+  ✨ Generated from Field `PlantingPlan`.`plannedDate_max` of type `Date`
+  """
+  plannedDate_max: OrderDirection
+}
+"""
+✨ Generated data input type for table 'User'. It includes all necessary fields for creating or upserting rows into table.
+"""
+input User_Data {
+  """
+  ✨ Generated from Field `User`.`id` of type `UUID!`
+  """
+  id: UUID
+  """
+  ✨ `_expr` server value variant of `id` (✨ Generated from Field `User`.`id` of type `UUID!`)
+  """
+  id_expr: UUID_Expr
+  """
+  ✨ Generated from Field `User`.`createdAt` of type `Timestamp!`
+  """
+  createdAt: Timestamp
+  """
+  ✨ `_expr` server value variant of `createdAt` (✨ Generated from Field `User`.`createdAt` of type `Timestamp!`)
+  """
+  createdAt_expr: Timestamp_Expr
+  """
+  ✨ `_time` server value variant of `createdAt` (✨ Generated from Field `User`.`createdAt` of type `Timestamp!`)
+  """
+  createdAt_time: Timestamp_Relative
+  """
+  ✨ `_update` server value variant of `createdAt` (✨ Generated from Field `User`.`createdAt` of type `Timestamp!`)
+  """
+  createdAt_update: [Timestamp_Update!]
+  """
+  ✨ Generated from Field `User`.`displayName` of type `String!`
+  """
+  displayName: String
+  """
+  ✨ `_expr` server value variant of `displayName` (✨ Generated from Field `User`.`displayName` of type `String!`)
+  """
+  displayName_expr: String_Expr
+  """
+  ✨ Generated from Field `User`.`email` of type `String`
+  """
+  email: String
+  """
+  ✨ `_expr` server value variant of `email` (✨ Generated from Field `User`.`email` of type `String`)
+  """
+  email_expr: String_Expr
+  """
+  ✨ Generated from Field `User`.`farmName` of type `String`
+  """
+  farmName: String
+  """
+  ✨ `_expr` server value variant of `farmName` (✨ Generated from Field `User`.`farmName` of type `String`)
+  """
+  farmName_expr: String_Expr
+  """
+  ✨ Generated from Field `User`.`location` of type `String`
+  """
+  location: String
+  """
+  ✨ `_expr` server value variant of `location` (✨ Generated from Field `User`.`location` of type `String`)
+  """
+  location_expr: String_Expr
+}
+"""
+✨ Generated filter input type for table 'User'. This input allows filtering objects using various conditions. Use `_or`, `_and`, and `_not` to compose complex filters.
+"""
+input User_Filter {
+  """
+  Apply multiple filter conditions using `AND` logic.
+  """
+  _and: [User_Filter!]
+  """
+  Negate the result of the provided filter condition.
+  """
+  _not: User_Filter
+  """
+  Apply multiple filter conditions using `OR` logic.
+  """
+  _or: [User_Filter!]
+  """
+  ✨ Generated from Field `User`.`id` of type `UUID!`
+  """
+  id: UUID_Filter
+  """
+  ✨ Generated from Field `User`.`createdAt` of type `Timestamp!`
+  """
+  createdAt: Timestamp_Filter
+  """
+  ✨ Generated from Field `User`.`displayName` of type `String!`
+  """
+  displayName: String_Filter
+  """
+  ✨ Generated from Field `User`.`email` of type `String`
+  """
+  email: String_Filter
+  """
+  ✨ Generated from Field `User`.`farmName` of type `String`
+  """
+  farmName: String_Filter
+  """
+  ✨ Generated from Field `User`.`location` of type `String`
+  """
+  location: String_Filter
+  """
+  ✨ Generated from Field `User`.`harvests_on_user` of type `[Harvest!]!`
+  """
+  harvests_on_user: Harvest_ListFilter
+  """
+  ✨ Generated from Field `User`.`plantingPlans_on_user` of type `[PlantingPlan!]!`
+  """
+  plantingPlans_on_user: PlantingPlan_ListFilter
+}
+"""
+✨ Generated first-row input type for table 'User'. This input selects the first row matching the filter criteria, ordered according to the specified conditions.
+"""
+input User_FirstRow {
+  """
+  Order the result by the specified fields.
+  """
+  orderBy: [User_Order!]
+  """
+  Filters rows based on the specified conditions.
+  """
+  where: User_Filter
+}
+"""
+✨ Generated having input type for table 'User'. This input allows you to filter groups during aggregate queries using various conditions. Use `_or`, `_and`, and `_not` to compose complex filters.
+"""
+input User_Having {
+  """
+  Apply multiple Having conditions using `AND` logic.
+  """
+  _and: [User_Having!]
+  """
+  Whether to apply DISTINCT to the aggregate function.
+  """
+  _distinct: Boolean
+  """
+  Negate the result of the provided Having condition.
+  """
+  _not: User_Having
+  """
+  Apply multiple Having conditions using `OR` logic.
+  """
+  _or: [User_Having!]
+  """
+  ✨ Generated from Field `User`.`_count` of type `Int!`
+  """
+  _count: Int_Filter
+  """
+  ✨ Generated from Field `User`.`createdAt_count` of type `Int!`
+  """
+  createdAt_count: Int_Filter
+  """
+  ✨ Generated from Field `User`.`displayName_count` of type `Int!`
+  """
+  displayName_count: Int_Filter
+  """
+  ✨ Generated from Field `User`.`email_count` of type `Int!`
+  """
+  email_count: Int_Filter
+  """
+  ✨ Generated from Field `User`.`farmName_count` of type `Int!`
+  """
+  farmName_count: Int_Filter
+  """
+  ✨ Generated from Field `User`.`id_count` of type `Int!`
+  """
+  id_count: Int_Filter
+  """
+  ✨ Generated from Field `User`.`location_count` of type `Int!`
+  """
+  location_count: Int_Filter
+  """
+  ✨ Generated from Field `User`.`createdAt_min` of type `Timestamp`
+  """
+  createdAt_min: Timestamp_Filter
+  """
+  ✨ Generated from Field `User`.`createdAt_max` of type `Timestamp`
+  """
+  createdAt_max: Timestamp_Filter
+}
+"""
+✨ Generated key input type for table 'User'. It represents the primary key fields used to uniquely identify a row in the table.
+"""
+input User_Key {
+  """
+  ✨ Generated from Field `User`.`id` of type `UUID!`
+  """
+  id: UUID
+  """
+  ✨ `_expr` server value variant of `id` (✨ Generated from Field `User`.`id` of type `UUID!`)
+  """
+  id_expr: UUID_Expr
+}
+"""
+✨ Generated list filter input type for table 'User'. This input applies filtering logic based on the count or existence of related objects that matches certain criteria.
+"""
+input User_ListFilter {
+  """
+  The desired number of objects that match the condition (defaults to at least one).
+  """
+  count: Int_Filter = {gt:0}
+  """
+  Condition of the related objects to filter for.
+  """
+  exist: User_Filter
+}
+"""
+✨ Generated order input type for table 'User'. This input defines the sorting order of rows in query results based on one or more fields.
+"""
+input User_Order {
+  """
+  ✨ Generated from Field `User`.`id` of type `UUID!`
+  """
+  id: OrderDirection
+  """
+  ✨ Generated from Field `User`.`createdAt` of type `Timestamp!`
+  """
+  createdAt: OrderDirection
+  """
+  ✨ Generated from Field `User`.`displayName` of type `String!`
+  """
+  displayName: OrderDirection
+  """
+  ✨ Generated from Field `User`.`email` of type `String`
+  """
+  email: OrderDirection
+  """
+  ✨ Generated from Field `User`.`farmName` of type `String`
+  """
+  farmName: OrderDirection
+  """
+  ✨ Generated from Field `User`.`location` of type `String`
+  """
+  location: OrderDirection
+  """
+  ✨ Generated from Field `User`.`_count` of type `Int!`
+  """
+  _count: OrderDirection
+  """
+  ✨ Generated from Field `User`.`createdAt_count` of type `Int!`
+  """
+  createdAt_count: OrderDirection
+  """
+  ✨ Generated from Field `User`.`displayName_count` of type `Int!`
+  """
+  displayName_count: OrderDirection
+  """
+  ✨ Generated from Field `User`.`email_count` of type `Int!`
+  """
+  email_count: OrderDirection
+  """
+  ✨ Generated from Field `User`.`farmName_count` of type `Int!`
+  """
+  farmName_count: OrderDirection
+  """
+  ✨ Generated from Field `User`.`id_count` of type `Int!`
+  """
+  id_count: OrderDirection
+  """
+  ✨ Generated from Field `User`.`location_count` of type `Int!`
+  """
+  location_count: OrderDirection
+  """
+  ✨ Generated from Field `User`.`createdAt_min` of type `Timestamp`
+  """
+  createdAt_min: OrderDirection
+  """
+  ✨ Generated from Field `User`.`createdAt_max` of type `Timestamp`
+  """
+  createdAt_max: OrderDirection
+}

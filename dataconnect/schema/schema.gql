@@ -1,0 +1,46 @@
+type User @table {
+  displayName: String!
+  createdAt: Timestamp!
+  email: String
+  farmName: String
+  location: String
+}
+
+type Crop @table {
+  name: String!
+  createdAt: Timestamp!
+  description: String
+  harvestSeason: String
+}
+
+type Harvest @table {
+  user: User!
+  crop: Crop!
+  harvestDate: Date!
+  quantity: Float!
+  unit: String!
+  createdAt: Timestamp!
+  location: String
+  notes: String
+}
+
+type Inventory @table {
+  crop: Crop!
+  quantity: Float!
+  unit: String!
+  lastUpdated: Timestamp!
+  storageLocation: String!
+  notes: String
+}
+
+type PlantingPlan @table {
+  user: User!
+  crop: Crop!
+  plannedDate: Date!
+  expectedYield: Float!
+  unit: String!
+  createdAt: Timestamp!
+  actualPlantDate: Date
+  notes: String
+  status: String
+}

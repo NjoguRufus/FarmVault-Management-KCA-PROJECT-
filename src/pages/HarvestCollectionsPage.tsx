@@ -15,11 +15,12 @@ import {
   ChevronDown,
   Eye,
   EyeOff,
+  Loader2,
 } from 'lucide-react';
 import { useProject } from '@/contexts/ProjectContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCollection } from '@/hooks/useCollection';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDate, toDate } from '@/lib/dateUtils';
 import { cn } from '@/lib/utils';
 import type { HarvestCollection, HarvestPicker, PickerWeighEntry } from '@/types';
@@ -28,11 +29,13 @@ import {
   addHarvestPicker,
   addPickerWeighEntry,
   markPickerCashPaid,
-  markPickersPaidInBatch,
   setBuyerPriceAndMaybeClose,
   recalcCollectionTotals,
   registerHarvestCash,
   applyHarvestCashPayment,
+  payPickersFromWalletBatchFirestore,
+  topUpHarvestWallet,
+  getHarvestWallet,
 } from '@/services/harvestCollectionService';
 import {
   Dialog,
@@ -70,6 +73,7 @@ export default function HarvestCollectionsPage() {
   const { activeProject, projects, setActiveProject } = useProject();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  // Master wallet is now updated via Firestore transaction helpers (no Cloud Functions).
 
   const effectiveProject = useMemo(() => {
     if (routeProjectId) {
@@ -110,10 +114,13 @@ export default function HarvestCollectionsPage() {
   const [statsExpanded, setStatsExpanded] = useState(true);
   const [paySelectedIds, setPaySelectedIds] = useState<Set<string>>(new Set());
   const [cashAmount, setCashAmount] = useState('');
+  const [cashPreviousAmount, setCashPreviousAmount] = useState(0);
   const [cashSource, setCashSource] = useState<'bank' | 'broker' | 'custom'>('bank');
   const [cashSourceCustom, setCashSourceCustom] = useState('');
   const [cashDialogCollection, setCashDialogCollection] = useState<HarvestCollection | null>(null);
   const [cashDialogVisible, setCashDialogVisible] = useState(false);
+  const [cashDialogSaving, setCashDialogSaving] = useState(false);
+  const [payingSelected, setPayingSelected] = useState(false);
 
   const handleSaveCash = async () => {
     if (!cashDialogCollection || !cashAmount.trim() || !companyId) return;
@@ -123,26 +130,44 @@ export default function HarvestCollectionsPage() {
       return;
     }
     try {
+      setCashDialogSaving(true);
       const resolvedSource =
         cashSource === 'custom' && cashSourceCustom.trim().length > 0
           ? cashSourceCustom.trim()
           : cashSource;
+
+      const previousTotal = cashPreviousAmount || 0;
+      const topUp = amount;
+      const newTotal = previousTotal + topUp;
+
       await registerHarvestCash({
         collectionId: cashDialogCollection.id,
         projectId: cashDialogCollection.projectId,
         companyId: cashDialogCollection.companyId,
         cropType: String(cashDialogCollection.cropType),
-        cashReceived: amount,
+        cashReceived: newTotal,
         source: resolvedSource,
         receivedBy: user?.name || user?.email || user?.id || 'unknown',
       });
+      // Top up the master harvest wallet by the new cash amount only (do not overwrite)
+      if (topUp > 0) {
+        await topUpHarvestWallet({
+          companyId: cashDialogCollection.companyId,
+          projectId: cashDialogCollection.projectId,
+          cropType: String(cashDialogCollection.cropType),
+          amount: topUp,
+        });
+      }
       queryClient.invalidateQueries({ queryKey: ['harvestCashPools'] });
-      setCashDialogOpen(false);
+      queryClient.invalidateQueries({ queryKey: harvestWalletQueryKey });
       setCashDialogCollection(null);
+      setCashPreviousAmount(newTotal);
       setCashAmount('');
       toast({ title: 'Cash registered' });
     } catch (e: any) {
       toast({ title: 'Error', description: e?.message ?? 'Failed to register cash', variant: 'destructive' });
+    } finally {
+      setCashDialogSaving(false);
     }
   };
 
@@ -169,6 +194,28 @@ export default function HarvestCollectionsPage() {
   });
 
   const companyId = user?.companyId ?? '';
+
+  // Shared harvest wallet (one per project+crop) — balance deducts when paying from any collection
+  const harvestWalletQueryKey = [
+    'harvestWallet',
+    companyId,
+    effectiveProject?.id ?? '',
+    String(effectiveProject?.cropType ?? ''),
+  ] as const;
+  const { data: harvestWallet } = useQuery({
+    queryKey: harvestWalletQueryKey,
+    queryFn: () =>
+      getHarvestWallet({
+        companyId,
+        projectId: effectiveProject!.id,
+        cropType: String(effectiveProject!.cropType),
+      }),
+    enabled:
+      !!companyId &&
+      !!effectiveProject?.id &&
+      String(effectiveProject?.cropType).toLowerCase() === 'french-beans',
+    refetchInterval: 5000,
+  });
 
   const collections = useMemo(() => {
     if (!effectiveProject) return allCollections;
@@ -533,14 +580,22 @@ export default function HarvestCollectionsPage() {
 
     const payAmount = picker.totalPay ?? 0;
 
-    if (isFrenchBeansCollection && selectedCollectionId) {
+    if (isFrenchBeansCollection && selectedCollectionId && effectiveProject && user?.companyId) {
       try {
-        await applyHarvestCashPayment(selectedCollectionId, payAmount);
+        await applyHarvestCashPayment({
+          companyId: user.companyId,
+          projectId: effectiveProject.id,
+          cropType: String(effectiveProject.cropType),
+          collectionId: selectedCollectionId,
+          amount: payAmount,
+        });
+        // Refresh harvest cash pools and shared wallet so balances update in UI
         queryClient.invalidateQueries({ queryKey: ['harvestCashPools'] });
+        queryClient.invalidateQueries({ queryKey: harvestWalletQueryKey });
       } catch (e: any) {
         toast({
           title: 'Cannot pay picker',
-          description: e?.message ?? 'Not enough cash in Harvest Cash Wallet.',
+          description: e?.message ?? 'Not enough cash in Harvest Wallet.',
           variant: 'destructive',
         });
         return;
@@ -568,7 +623,7 @@ export default function HarvestCollectionsPage() {
   };
 
   const handleMarkMultiplePaid = async (pickerIds: string[]) => {
-    if (pickerIds.length === 0 || !selectedCollectionId || !companyId) return;
+    if (pickerIds.length === 0 || !selectedCollectionId || !companyId || !effectiveProject) return;
 
     // Only operate on pickers that are not yet paid to avoid
     // duplicate payment batches and "document already exists" errors.
@@ -586,40 +641,47 @@ export default function HarvestCollectionsPage() {
       return;
     }
 
-    const totalAmount = unpaidIds.reduce((sum, id) => {
-      const p = allPickers.find((x) => x.id === id);
-      return sum + (p?.totalPay ?? 0);
-    }, 0);
-
-    if (isFrenchBeansCollection) {
+    if (isFrenchBeansCollection && user?.companyId && effectiveProject) {
+      setPayingSelected(true);
       try {
-        await applyHarvestCashPayment(selectedCollectionId, totalAmount);
+        await payPickersFromWalletBatchFirestore({
+          companyId,
+          projectId: effectiveProject.id,
+          cropType: String(effectiveProject.cropType),
+          collectionId: selectedCollectionId,
+          pickerIds: unpaidIds,
+        });
+
+        const updatedPickers = allPickers.map((p) =>
+          unpaidIds.includes(p.id) ? { ...p, isPaid: true, paidAt: new Date() } : p
+        );
+        queryClient.setQueryData(['harvestPickers'], updatedPickers);
+        // Refresh harvest cash pools and shared wallet so balances update in UI
         queryClient.invalidateQueries({ queryKey: ['harvestCashPools'] });
+        queryClient.invalidateQueries({ queryKey: harvestWalletQueryKey });
+        setPaySelectedIds(new Set());
+        toast({ title: `${unpaidIds.length} marked paid` });
       } catch (e: any) {
+        console.error('payPickersFromWalletBatchFirestore error', e);
         toast({
           title: 'Cannot pay selected pickers',
-          description: e?.message ?? 'Not enough cash in Harvest Cash Wallet.',
+          description: e?.message ?? 'Not enough cash in Harvest Wallet.',
           variant: 'destructive',
         });
         return;
+      } finally {
+        setPayingSelected(false);
       }
+      return;
     }
 
+    // Non-wallet collections: mark paid locally & via batch as before
     const updatedPickers = allPickers.map((p) =>
       unpaidIds.includes(p.id) ? { ...p, isPaid: true, paidAt: new Date() } : p
     );
     queryClient.setQueryData(['harvestPickers'], updatedPickers);
     setPaySelectedIds(new Set());
     toast({ title: `${unpaidIds.length} marked paid` });
-    markPickersPaidInBatch({
-      companyId,
-      collectionId: selectedCollectionId,
-      pickerIds: unpaidIds,
-      totalAmount,
-    }).catch((e: any) => {
-      toast({ title: 'Sync failed', description: e?.message, variant: 'destructive' });
-      queryClient.invalidateQueries({ queryKey: ['harvestPickers'] });
-    });
   };
 
   const handleSetBuyerPrice = async (markBuyerPaid: boolean) => {
@@ -735,9 +797,10 @@ export default function HarvestCollectionsPage() {
               );
               if (!fb) return null;
               const pool = cashPoolByCollection[fb.id];
-              const totalPaidOut = pool?.totalPaidOut ?? 0;
-              const remaining = pool?.remainingBalance ?? 0;
-              const cashReceived = pool?.cashReceived ?? 0;
+              // Use shared harvest wallet so balance deducts when paying from any collection
+              const totalPaidOut = harvestWallet?.cashPaidOutTotal ?? pool?.totalPaidOut ?? 0;
+              const remaining = harvestWallet?.currentBalance ?? pool?.remainingBalance ?? 0;
+              const cashReceived = harvestWallet?.cashReceivedTotal ?? pool?.cashReceived ?? 0;
               return (
                 <Popover>
                   <PopoverTrigger asChild>
@@ -747,7 +810,9 @@ export default function HarvestCollectionsPage() {
                       className="text-xs min-h-8 px-3 rounded-lg inline-flex items-center gap-1"
                       onClick={() => {
                         setCashDialogCollection(fb as any);
-                        setCashAmount(cashReceived ? String(cashReceived) : '');
+                        setCashPreviousAmount(cashReceived);
+                        // For top-up UX, start with empty input so user types the new amount to add
+                        setCashAmount('');
                         setCashSource((pool?.source as 'bank' | 'broker') ?? 'bank');
                         setCashDialogVisible(false);
                       }}
@@ -862,12 +927,20 @@ export default function HarvestCollectionsPage() {
                           <Button
                             size="sm"
                             className="mt-3 rounded-full bg-amber-100 text-emerald-900 border border-emerald-500 hover:bg-amber-200 hover:text-emerald-950 font-semibold shadow-sm"
+                            disabled={cashDialogSaving}
                             onClick={() => {
                               setCashDialogCollection(fb as any);
                               handleSaveCash();
                             }}
                           >
-                            Add / Update Cash
+                            {cashDialogSaving ? (
+                              <>
+                                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                                Saving...
+                              </>
+                            ) : (
+                              'Add / Update Cash'
+                            )}
                           </Button>
                         </div>
                       </div>
@@ -1004,7 +1077,10 @@ export default function HarvestCollectionsPage() {
                     className="inline-flex items-center gap-1 text-[12px] px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100"
                     onClick={() => {
                       setCashDialogCollection(selectedCollection as any);
-                      setCashAmount(cashPoolForCollection?.cashReceived?.toString() ?? '');
+                      const existingReceived = Number(cashPoolForCollection?.cashReceived ?? 0);
+                      setCashPreviousAmount(existingReceived);
+                      // For top-up UX, keep input empty so user types the new amount to add
+                      setCashAmount('');
                       setCashSource((cashPoolForCollection?.source as 'bank' | 'broker') ?? 'bank');
                       setCashDialogVisible(false);
                     }}
@@ -1022,7 +1098,7 @@ export default function HarvestCollectionsPage() {
                     <div className="flex flex-col items-center gap-3">
                       <p className="text-xs font-semibold text-emerald-50">Harvest Cash Wallet</p>
                       <div className="flex flex-col items-center justify-center gap-2">
-                        <p className="text-[11px] text-emerald-100">Balance remaining</p>
+                        <p className="text-[11px] text-emerald-100">Current balance (shared)</p>
                         <div className="flex items-center justify-center gap-2">
                           <p
                             className={cn(
@@ -1030,7 +1106,7 @@ export default function HarvestCollectionsPage() {
                               !cashDialogVisible && 'blur-sm select-none'
                             )}
                           >
-                            KES {(cashPoolForCollection?.remainingBalance ?? 0).toLocaleString()}
+                            KES {(harvestWallet?.currentBalance ?? cashPoolForCollection?.remainingBalance ?? 0).toLocaleString()}
                           </p>
                           <button
                             type="button"
@@ -1040,17 +1116,6 @@ export default function HarvestCollectionsPage() {
                             {cashDialogVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                           </button>
                         </div>
-                      </div>
-                      <div className="flex flex-col items-center justify-center gap-1 mt-1">
-                        <p className="text-[11px] text-emerald-100/90">Paid out</p>
-                        <p
-                          className={cn(
-                            'font-semibold text-emerald-50 tabular-nums',
-                            !cashDialogVisible && 'blur-sm select-none'
-                          )}
-                        >
-                          KES {(cashPoolForCollection?.totalPaidOut ?? 0).toLocaleString()}
-                        </p>
                       </div>
                     </div>
                   </div>
@@ -1204,9 +1269,17 @@ export default function HarvestCollectionsPage() {
                   <Button
                     size="sm"
                     className="min-h-9 rounded-lg font-semibold"
+                    disabled={payingSelected}
                     onClick={() => handleMarkMultiplePaid(Array.from(paySelectedIds))}
                   >
-                    Pay selected ({paySelectedIds.size}) — KES {selectedTotalPay.toLocaleString()}
+                    {payingSelected ? (
+                      <>
+                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                        Paying selected ({paySelectedIds.size}) — KES {selectedTotalPay.toLocaleString()}
+                      </>
+                    ) : (
+                      <>Pay selected ({paySelectedIds.size}) — KES {selectedTotalPay.toLocaleString()}</>
+                    )}
                   </Button>
                 )}
               </div>

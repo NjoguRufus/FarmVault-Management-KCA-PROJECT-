@@ -188,7 +188,7 @@ service cloud.firestore {
       allow create: if isSignedIn() && (matchesCompanyOnCreate() || isDeveloper());
     }
 
-    // --- Harvest Cash Pools (French beans legacy per-collection wallet) ---
+    // --- Harvest Cash Pools (French beans harvest wallet) ---
     match /harvestCashPools/{poolId} {
       allow read: if isSignedIn();
       allow update, delete: if isSignedIn() && (matchesCompanyOnDoc() || isDeveloper());
@@ -196,18 +196,19 @@ service cloud.firestore {
     }
 
     // --- Harvest Wallets (single master harvest wallet per project/crop) ---
+    // NOTE: Writes are intended to be done ONLY from backend (Cloud Functions / Admin SDK).
+    // Client apps should treat these documents as read-only.
     match /harvestWallets/{walletId} {
       allow read: if isSignedIn();
-      allow update, delete: if isSignedIn() && (matchesCompanyOnDoc() || isDeveloper());
-      allow create: if isSignedIn() && (matchesCompanyOnCreate() || isDeveloper());
+      allow write: if false;
     }
 
     // --- Collection cash usage for harvest wallet deductions ---
     // Tracks how much each harvest collection has deducted from its master wallet.
+    // Updated only from backend code so we block all client writes here.
     match /collectionCashUsage/{usageId} {
       allow read: if isSignedIn();
-      allow update, delete: if isSignedIn() && (matchesCompanyOnDoc() || isDeveloper());
-      allow create: if isSignedIn() && (matchesCompanyOnCreate() || isDeveloper());
+      allow write: if false;
     }
 
     // --- Suppliers ---

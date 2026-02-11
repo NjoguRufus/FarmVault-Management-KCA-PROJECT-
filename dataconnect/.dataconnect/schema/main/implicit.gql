@@ -1,0 +1,50 @@
+extend type Crop {
+  """
+  ✨ Implicit primary key field. It's a UUID column default to a generated new value. See `@table` for how to customize it.
+  """
+  id: UUID! @default(expr: "uuidV4()") @fdc_generated(from: "Crop", purpose: IMPLICIT_KEY_FIELD)
+}
+extend type Harvest {
+  """
+  ✨ Implicit primary key field. It's a UUID column default to a generated new value. See `@table` for how to customize it.
+  """
+  id: UUID! @default(expr: "uuidV4()") @fdc_generated(from: "Harvest", purpose: IMPLICIT_KEY_FIELD)
+  """
+  ✨ Implicit foreign key field based on `Harvest`.`crop`. It must match the value of `Crop`.`id`. See `@ref` for how to customize it.
+  """
+  cropId: UUID! @fdc_generated(from: "Harvest.crop", purpose: IMPLICIT_REF_FIELD)
+  """
+  ✨ Implicit foreign key field based on `Harvest`.`user`. It must match the value of `User`.`id`. See `@ref` for how to customize it.
+  """
+  userId: UUID! @fdc_generated(from: "Harvest.user", purpose: IMPLICIT_REF_FIELD)
+}
+extend type Inventory {
+  """
+  ✨ Implicit primary key field. It's a UUID column default to a generated new value. See `@table` for how to customize it.
+  """
+  id: UUID! @default(expr: "uuidV4()") @fdc_generated(from: "Inventory", purpose: IMPLICIT_KEY_FIELD)
+  """
+  ✨ Implicit foreign key field based on `Inventory`.`crop`. It must match the value of `Crop`.`id`. See `@ref` for how to customize it.
+  """
+  cropId: UUID! @fdc_generated(from: "Inventory.crop", purpose: IMPLICIT_REF_FIELD)
+}
+extend type PlantingPlan {
+  """
+  ✨ Implicit primary key field. It's a UUID column default to a generated new value. See `@table` for how to customize it.
+  """
+  id: UUID! @default(expr: "uuidV4()") @fdc_generated(from: "PlantingPlan", purpose: IMPLICIT_KEY_FIELD)
+  """
+  ✨ Implicit foreign key field based on `PlantingPlan`.`crop`. It must match the value of `Crop`.`id`. See `@ref` for how to customize it.
+  """
+  cropId: UUID! @fdc_generated(from: "PlantingPlan.crop", purpose: IMPLICIT_REF_FIELD)
+  """
+  ✨ Implicit foreign key field based on `PlantingPlan`.`user`. It must match the value of `User`.`id`. See `@ref` for how to customize it.
+  """
+  userId: UUID! @fdc_generated(from: "PlantingPlan.user", purpose: IMPLICIT_REF_FIELD)
+}
+extend type User {
+  """
+  ✨ Implicit primary key field. It's a UUID column default to a generated new value. See `@table` for how to customize it.
+  """
+  id: UUID! @default(expr: "uuidV4()") @fdc_generated(from: "User", purpose: IMPLICIT_KEY_FIELD)
+}

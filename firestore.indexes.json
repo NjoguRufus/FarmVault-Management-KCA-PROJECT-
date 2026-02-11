@@ -1,1 +1,55 @@
-{"indexes":[{"collectionGroup":"codeRed","queryScope":"COLLECTION","fields":[{"fieldPath":"companyId","order":"ASCENDING"},{"fieldPath":"updatedAt","order":"DESCENDING"}]},{"collectionGroup":"projects","queryScope":"COLLECTION","fields":[{"fieldPath":"companyId","order":"ASCENDING"},{"fieldPath":"status","order":"ASCENDING"},{"fieldPath":"createdAt","order":"DESCENDING"}]},{"collectionGroup":"workLogs","queryScope":"COLLECTION","fields":[{"fieldPath":"companyId","order":"ASCENDING"},{"fieldPath":"projectId","order":"ASCENDING"},{"fieldPath":"managerId","order":"ASCENDING"},{"fieldPath":"date","order":"DESCENDING"}]},{"collectionGroup":"expenses","queryScope":"COLLECTION","fields":[{"fieldPath":"companyId","order":"ASCENDING"},{"fieldPath":"projectId","order":"ASCENDING"},{"fieldPath":"category","order":"ASCENDING"},{"fieldPath":"date","order":"DESCENDING"}]},{"collectionGroup":"harvests","queryScope":"COLLECTION","fields":[{"fieldPath":"companyId","order":"ASCENDING"},{"fieldPath":"projectId","order":"ASCENDING"},{"fieldPath":"destination","order":"ASCENDING"},{"fieldPath":"date","order":"DESCENDING"}]},{"collectionGroup":"sales","queryScope":"COLLECTION","fields":[{"fieldPath":"companyId","order":"ASCENDING"},{"fieldPath":"projectId","order":"ASCENDING"},{"fieldPath":"brokerId","order":"ASCENDING"},{"fieldPath":"status","order":"ASCENDING"},{"fieldPath":"date","order":"DESCENDING"}]},{"collectionGroup":"deliveries","queryScope":"COLLECTION","fields":[{"fieldPath":"companyId","order":"ASCENDING"},{"fieldPath":"projectId","order":"ASCENDING"},{"fieldPath":"driverId","order":"ASCENDING"},{"fieldPath":"status","order":"ASCENDING"},{"fieldPath":"date","order":"DESCENDING"}]},{"collectionGroup":"inventoryItems","queryScope":"COLLECTION","fields":[{"fieldPath":"companyId","order":"ASCENDING"},{"fieldPath":"category","order":"ASCENDING"},{"fieldPath":"name","order":"ASCENDING"}]},{"collectionGroup":"seasonChallenges","queryScope":"COLLECTION","fields":[{"fieldPath":"companyId","order":"ASCENDING"},{"fieldPath":"projectId","order":"ASCENDING"},{"fieldPath":"cropType","order":"ASCENDING"},{"fieldPath":"dateIdentified","order":"DESCENDING"}]},{"collectionGroup":"harvestCollections","queryScope":"COLLECTION","fields":[{"fieldPath":"companyId","order":"ASCENDING"},{"fieldPath":"projectId","order":"ASCENDING"},{"fieldPath":"harvestDate","order":"DESCENDING"}]},{"collectionGroup":"harvestPickers","queryScope":"COLLECTION","fields":[{"fieldPath":"collectionId","order":"ASCENDING"},{"fieldPath":"pickerNumber","order":"ASCENDING"}]},{"collectionGroup":"pickerWeighEntries","queryScope":"COLLECTION","fields":[{"fieldPath":"collectionId","order":"ASCENDING"},{"fieldPath":"recordedAt","order":"DESCENDING"}]},{"collectionGroup":"pickerWeighEntries","queryScope":"COLLECTION","fields":[{"fieldPath":"pickerId","order":"ASCENDING"},{"fieldPath":"recordedAt","order":"DESCENDING"}]},{"collectionGroup":"harvestPaymentBatches","queryScope":"COLLECTION","fields":[{"fieldPath":"companyId","order":"ASCENDING"},{"fieldPath":"collectionId","order":"ASCENDING"},{"fieldPath":"paidAt","order":"DESCENDING"}]}],"fieldOverrides":[]}
+{
+  "indexes": [
+    {
+      "collectionGroup": "codeRed",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "companyId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "workLogs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "companyId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "projectId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "paid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "ratePerPerson",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    }
+  ],
+  "fieldOverrides": []
+}
